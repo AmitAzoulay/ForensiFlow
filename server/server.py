@@ -5,12 +5,51 @@ from dotenv import load_dotenv
 from pathlib import Path
 from flask_cors import CORS
 import os
+import uuid, datetime
 import Evtx.Evtx as evtx
 import xml.etree.ElementTree as ET
 from neo4j import GraphDatabase
 
-# --- 1. SETUP LOGGING ---
-# This will print nice timestamps to your console
+
+
+INSERT_PROCESS_QUERY = """
+MERGE (c:Case {case_id: $case_id})
+MERGE (parent:Process {name: $parent_proc_name, case_id: $case_id})
+MERGE (child:Process {name: $new_proc_name, case_id: $case_id})
+MERGE (parent)-[r:SPAWNED]->(child)
+SET r += $details
+"""
+
+INSERT_LOGON_QUERY = """
+MERGE (c:Case {case_id: $case_id})
+MERGE (user:User {name: $target_user, case_id: $case_id})
+MERGE (host:Computer {name: $workstation, case_id: $case_id})
+MERGE (user)-[r:LOGGED_ON]->(host)
+SET r += $details
+"""
+INSERT_REGISTRY_CREATED_QUERY = """
+MERGE (c:Case {case_id: $case_id})
+MERGE (proc:Process {name: $process_name, case_id: $case_id})
+MERGE (reg:Registry {name: $registry_path, case_id: $case_id})
+MERGE (proc)-[r:CREATED]->(reg)
+SET r += $details
+"""
+
+INSERT_REGISTRY_MODIFIED_QUERY = """
+MERGE (c:Case {case_id: $case_id})
+MERGE (proc:Process {name: $process_name, case_id: $case_id})
+MERGE (reg:Registry {name: $registry_path, case_id: $case_id})
+MERGE (proc)-[r:MODIFIED]->(reg)
+SET r += $details
+"""
+
+INSERT_REGISTRY_DELETED_QUERY = """
+MERGE (c:Case {case_id: $case_id})
+MERGE (proc:Process {name: $process_name, case_id: $case_id})
+MERGE (reg:Registry {name: $registry_path, case_id: $case_id})
+MERGE (proc)-[r:DELETED]->(reg)
+SET r += $details
+"""
 
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
@@ -34,114 +73,239 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-def insert_process_relationship(tx, parent_name, child_name, details):
-    query = (
-        "MERGE (p:Process {path: $parent}) "
-        "MERGE (c:Process {path: $child}) "
-        "MERGE (p)-[r:SPAWNED]->(c) "
-        "SET r += $details"  
-    )
-    tx.run(query, parent=parent_name, child=child_name, details=details)
 
-def parse_and_store_evtx(filepath):
-    logger.info(f"Starting to parse: {filepath}")
-    nodes_created = 0
-    total_records = 0
-    start_time = time.time()
+def insert_log_file(session, filepath):
+    case_id = str(uuid.uuid4())
+    case_name = f"Investigation_{filepath}_{datetime.datetime.now()}"
+
+    query_create_case = """CREATE (i:Investigation {case_id: $case_id, name: $name, created_at: timestamp()})"""
+    #session.run(query_create_case, case_id=case_id, name=case_name)
+
+    return case_id, case_name
+
+
+
+def extracts_processes(root, session, case_id):
     
-    with evtx.Evtx(filepath) as log:
-        with driver.session() as session:
-            for record in log.records():
-                total_records += 1
-                
-                if total_records % 500 == 0:
-                    elapsed = time.time() - start_time
-                    logger.info(f"Scanned {total_records} records... (Found {nodes_created} process events). Time: {elapsed:.2f}s")
+    data_items = root.findall(".//EventData/Data")
+    data_map = {item.get('Name'): item.text for item in data_items}
 
+
+    parent_path = data_map.get('ParentProcessName', '')
+    new_proc_path = data_map.get('NewProcessName', '')
+    
+
+    parent_proc_name = os.path.basename(parent_path) if parent_path else "Unknown"
+    new_proc_name = os.path.basename(new_proc_path) if new_proc_path else "Unknown"
+
+
+    details = {
+        "event_id": "4688",
+        "timestamp": root.find(".//TimeCreated").get('SystemTime'),
+        "parent_pid": data_map.get('ProcessId', '-'),
+        "parent_full_path": parent_path,
+        "new_pid": data_map.get('NewProcessId', '-'),
+        "new_full_path": new_proc_path,
+        "command_line": data_map.get('CommandLine', '-')
+    }
+
+    if parent_path and new_proc_path:
+        try:
+            session.run(INSERT_PROCESS_QUERY, 
+                        case_id=case_id,
+                        parent_proc_name=parent_proc_name, 
+                        new_proc_name=new_proc_name,      
+                        details=details               
+            )
+            logger.info(f"Inserted Process: {parent_proc_name} -> {new_proc_name}")
+        except Exception as e:
+            logger.error(f"Failed to insert process query: {e}")
+
+def extract_loggon(root, session, case_id):
+    data_items = root.findall(".//EventData/Data")
+    data_map = {item.get('Name'): item.text for item in data_items}
+
+    target_user = data_map.get('TargetUserName', 'Unknown')
+    workstation = data_map.get('WorkstationName', 'Unknown')
+
+    details = {
+        "event_id": "4624",
+        "timestamp": root.find(".//TimeCreated").get('SystemTime'),
+        "SubjectUserSid": data_map.get('SubjectUserSid', '-'),
+        "SubjectUserName": data_map.get('SubjectUserName', '-'),
+        "SubjectDomainName": data_map.get('SubjectDomainName', '-'),
+        "SubjectLogonId": data_map.get('SubjectLogonId', '-'),
+        "TargetUserSid": data_map.get('TargetUserSid', '-'),
+        "TargetDomainName": data_map.get('TargetDomainName', '-'),
+        "TargetLogonId": data_map.get('TargetLogonId', '-'),
+        "LogonType": data_map.get('LogonType', '-'),
+        "ProcessId": data_map.get('ProcessId', '-'),
+        "ProcessName": data_map.get('ProcessName', '-'),
+        "IpAddress": data_map.get('IpAddress', '-'),
+        "IpPort": data_map.get('IpPort', '-'),
+        "ElevatedToken": data_map.get('ElevatedToken', '-')
+    }
+
+    
+    if target_user and workstation:
+        try:
+            session.run(INSERT_LOGON_QUERY, 
+                        case_id=case_id,
+                        target_user=target_user, 
+                        workstation=workstation,
+                        details=details
+            )
+            logger.info(f"Inserted Logon: {target_user} -> {workstation}")
+        except Exception as e:
+            logger.error(f"Failed to insert logon query: {e}")
+            
+def extract_registry(root, session, case_id):
+
+    data_items = root.findall(".//EventData/Data")
+    data_map = {item.get('Name'): item.text for item in data_items}
+
+    op_type_raw = data_map.get('OperationType', '').lower()
+
+    proc_path = data_map.get('ProcessName', '')
+    process_name = os.path.basename(proc_path) if proc_path else "Unknown"
+
+    object_name = data_map.get('ObjectName', '')
+    value_name = data_map.get('ObjectValueName', '')
+    
+    registry_path = f"{object_name}\\{value_name}" if value_name else object_name
+    if not registry_path:
+        registry_path = "Unknown_Registry_Key"
+
+    details = {
+        "event_id": "4657",
+        "timestamp": root.find(".//TimeCreated").get('SystemTime'),
+        "user": data_map.get('AccountName', '-'),
+        "domain": data_map.get('AccountDomain', '-'),
+        "logon_id": data_map.get('LogonId', '-'),
+        "process_id": data_map.get('ProcessID', '-'),
+        "process_path": proc_path,
+        "operation_text": data_map.get('OperationType', '-'),
+        "old_value_type": data_map.get('OldValueType', '-'),
+        "old_value": data_map.get('OldValue', '-'),
+        "new_value_type": data_map.get('NewValueType', '-'),
+        "new_value": data_map.get('NewValue', '-')
+    }
+
+    if process_name and registry_path:
+        try:
+            logger.info(op_type_raw)
+            if "%%1904" in op_type_raw:
+                session.run(INSERT_REGISTRY_CREATED_QUERY, 
+                        case_id=case_id,
+                        process_name=process_name, 
+                        registry_path=registry_path,
+                        details=details
+                    )
+            elif "1906" in op_type_raw:
+                session.run(INSERT_REGISTRY_DELETED_QUERY, 
+                        case_id=case_id,
+                        process_name=process_name, 
+                        registry_path=registry_path,
+                        details=details
+                    )
+            elif "1905" in op_type_raw:
+                session.run(INSERT_REGISTRY_MODIFIED_QUERY, 
+                        case_id=case_id,
+                        process_name=process_name, 
+                        registry_path=registry_path,
+                        details=details
+                    )
+        except Exception as e:
+            logger.error(f"Failed to insert registry query: {e}")
+
+def from_evtx_files_to_logs(filepath):
+    
+    with evtx.Evtx(filepath) as logs:
+        with driver.session() as session:
+
+            case_id, case_name = insert_log_file(session, filepath)
+
+            for record in logs.records():
                 try:
                     xml_content = record.xml()
-                    
-                    # Parse XML safely
-                    # We need to register the namespace to find tags easily or ignore it
-                    # Here we strip namespaces for easier parsing in this snippet approach:
                     xml_content = xml_content.replace('xmlns="http://schemas.microsoft.com/win/2004/08/events/event"', '')
                     root = ET.fromstring(xml_content)
-                    
                     event_id = root.find(".//EventID")
-                    if event_id is None or event_id.text != '4688':
-                        continue
-                    
-                    data_items = root.findall(".//EventData/Data")
-                    data_map = {item.get('Name'): item.text for item in data_items}
-                    
-                    parent_proc = data_map.get('ParentProcessName')
-                    new_proc = data_map.get('NewProcessName')
-                    
-                    time_created = root.find(".//TimeCreated").get('SystemTime')
-                    
-                    details = {
-                        "event_id": "4688",
-                        "timestamp": time_created,
-                        "user": data_map.get('SubjectUserName', 'Unknown'),
-                        "domain": data_map.get('SubjectDomainName', '-'),
-                        "command_line": data_map.get('CommandLine', '-'),
-                        "parent_pid": data_map.get('ProcessId', '-'),
-                        "child_pid": data_map.get('NewProcessId', '-')
-                    }
 
-                    if parent_proc and new_proc:
-                        session.execute_write(
-                            insert_process_relationship, 
-                            parent_proc, 
-                            new_proc,
-                            details 
-                        )
-                        nodes_created += 1
-                        
+                         
+                    
+                    if event_id.text == '4688':
+                        logger.info(f"Event ID: {event_id.text}")
+                        extracts_processes(root, session,case_id)
+                    elif event_id.text == '4624':
+                        extract_loggon(root, session,case_id)
+                    elif event_id.text == "4657":
+                        extract_registry(root, session,case_id)
                 except Exception as e:
                     continue
     
-    total_time = time.time() - start_time
-    logger.info(f"Finished! Processed {total_records} logs in {total_time:.2f}s. Inserted {nodes_created} links.")
-    return nodes_created
+    return case_id
+
+
 
 @app.route('/api/graph-data', methods=['GET'])
 def get_graph_data():
-
+    
+    case_id = request.args.get('case_id')
+    
+    if not case_id:
+        return jsonify({"error": "Missing case_id parameter"}), 400
+    
     query = """
-    MATCH (parent:Process)-[r:SPAWNED]->(child:Process)
-    RETURN parent.path AS source, child.path AS target, properties(r) AS details
-    LIMIT 500
+    MATCH (n)-[r]->(m)
+    WHERE n.case_id = $case_id 
+    RETURN n, r, m
     """
     
-    nodes = set()
+    nodes_dict = {}
     links = []
     
     with driver.session() as session:
-        results = session.run(query)
+        results = session.run(query, case_id=case_id)
+
         for record in results:
-            source = record["source"]
-            target = record["target"]
-            details = record["details"] 
-            nodes.add(source)
-            nodes.add(target)
+            node_source = record["n"]
+            rel = record["r"]
+            node_target = record["m"]
+            source_id = node_source.element_id
+
+            if source_id not in nodes_dict:
+                nodes_dict[source_id] = {
+                    "id": source_id,
+                    "label": list(node_source.labels)[0], 
+                    "properties": dict(node_source)       
+                }
             
+            target_id = node_target.element_id
+            if target_id not in nodes_dict:
+                nodes_dict[target_id] = {
+                    "id": target_id,
+                    "label": list(node_target.labels)[0],
+                    "properties": dict(node_target)
+                }
             links.append({
-                "source": source, 
-                "target": target, 
-                "details": details 
+                "source": source_id,  
+                "target": target_id,
+                "type": rel.type,     
+                "details": dict(rel) 
             })
-            
+    
     return jsonify({
-        "nodes": [{"id": name, "group": 1} for name in nodes],
+        "nodes": list(nodes_dict.values()),
         "links": links
     })
 
 @app.route('/api/parse-evtx', methods=['POST'])
 def parse_evtx():
-    logger.info("Received upload request")
+\
     if 'evtxFile' not in request.files:
         return jsonify({"error": "No file part"}), 400
+    
     file = request.files['evtxFile']
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
@@ -150,12 +314,13 @@ def parse_evtx():
         filepath = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(filepath)
         try:
-            count = parse_and_store_evtx(filepath)
+            case_id = from_evtx_files_to_logs(filepath)
             return jsonify({
                 "status": "success", 
-                "message": f"Processed {count} process creation events.",
-                "filename": file.filename
+                "filename": file.filename,
+                "case_id": case_id
             }), 200
+        
         except Exception as e:
             logger.error(f"Parsing failed: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
