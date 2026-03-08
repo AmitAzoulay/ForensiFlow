@@ -74,14 +74,7 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 
-def insert_log_file(session, filepath):
-    case_id = str(uuid.uuid4())
-    case_name = f"Investigation_{filepath}_{datetime.datetime.now()}"
 
-    query_create_case = """CREATE (i:Investigation {case_id: $case_id, name: $name, created_at: timestamp()})"""
-    #session.run(query_create_case, case_id=case_id, name=case_name)
-
-    return case_id, case_name
 
 
 
@@ -106,7 +99,16 @@ def extracts_processes(root, session, case_id):
         "parent_full_path": parent_path,
         "new_pid": data_map.get('NewProcessId', '-'),
         "new_full_path": new_proc_path,
-        "command_line": data_map.get('CommandLine', '-')
+        "command_line": data_map.get('CommandLine', '-'),
+        "TokenElevationType" : data_map.get('TokenElevationType', '-'),
+        "SubjectUserSid" : data_map.get('SubjectUserSid', '-'),
+        "SubjectUserName" : data_map.get('SubjectUserName', '-'),
+        "SubjectDomainName" : data_map.get('SubjectDomainName', '-'),
+        "TargetUserSid" : data_map.get('TargetUserSid', '-'),
+        "TargetUserName" : data_map.get('TargetUserName', '-'),
+        "TargetDomainName" : data_map.get('TargetDomainName', '-'),
+        "TargetLogonId" : data_map.get('TargetLogonId', '-'),
+        "MandatoryLabel" : data_map.get('MandatoryLabel', '-'),
     }
 
     if parent_path and new_proc_path:
@@ -179,10 +181,10 @@ def extract_registry(root, session, case_id):
     details = {
         "event_id": "4657",
         "timestamp": root.find(".//TimeCreated").get('SystemTime'),
-        "user": data_map.get('AccountName', '-'),
-        "domain": data_map.get('AccountDomain', '-'),
-        "logon_id": data_map.get('LogonId', '-'),
-        "process_id": data_map.get('ProcessID', '-'),
+        "user": data_map.get('SubjectUserName', '-'),
+        "domain": data_map.get('SubjectDomainName', '-'),
+        "logon_id": data_map.get('SubjectLogonId', '-'),
+        "process_id": data_map.get('ProcessId', '-'),
         "process_path": proc_path,
         "operation_text": data_map.get('OperationType', '-'),
         "old_value_type": data_map.get('OldValueType', '-'),
@@ -218,12 +220,14 @@ def extract_registry(root, session, case_id):
         except Exception as e:
             logger.error(f"Failed to insert registry query: {e}")
 
-def from_evtx_files_to_logs(filepath):
-    
+
+
+def from_evtx_files_to_logs(filepath, case_id, case_name):
     with evtx.Evtx(filepath) as logs:
         with driver.session() as session:
-
-            case_id, case_name = insert_log_file(session, filepath)
+            # Save the investigation to Neo4j so it can be retrieved later
+            query_create_case = """CREATE (i:Investigation {case_id: $case_id, name: $name, created_at: timestamp()})"""
+            session.run(query_create_case, case_id=case_id, name=case_name)
 
             for record in logs.records():
                 try:
@@ -232,15 +236,15 @@ def from_evtx_files_to_logs(filepath):
                     root = ET.fromstring(xml_content)
                     event_id = root.find(".//EventID")
 
-                         
-                    
+                    if event_id is None:
+                        continue
+
                     if event_id.text == '4688':
-                        logger.info(f"Event ID: {event_id.text}")
-                        extracts_processes(root, session,case_id)
+                        extracts_processes(root, session, case_id)
                     elif event_id.text == '4624':
-                        extract_loggon(root, session,case_id)
+                        extract_loggon(root, session, case_id)
                     elif event_id.text == "4657":
-                        extract_registry(root, session,case_id)
+                        extract_registry(root, session, case_id)
                 except Exception as e:
                     continue
     
@@ -302,28 +306,59 @@ def get_graph_data():
 
 @app.route('/api/parse-evtx', methods=['POST'])
 def parse_evtx():
-\
     if 'evtxFile' not in request.files:
         return jsonify({"error": "No file part"}), 400
     
     file = request.files['evtxFile']
+    inv_name = request.form.get('invName', 'Investigation') 
+    
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
     if file:
-        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        # Sanitize the investigation name to prevent filesystem issues
+        safe_inv_name = "".join([c for c in inv_name if c.isalnum() or c in ('_', '-')]).rstrip()
+        if not safe_inv_name:
+            safe_inv_name = "Inv"
+
+        case_id = str(uuid.uuid4())
+        
+        # Format: <inv_name><inv_id>.evtx
+        new_filename = f"{safe_inv_name}{case_id}.evtx"
+        filepath = os.path.join(UPLOAD_FOLDER, new_filename)
+        
+        # Save file to disk
         file.save(filepath)
+        
         try:
-            case_id = from_evtx_files_to_logs(filepath)
+            # Process and save to Neo4j
+            from_evtx_files_to_logs(filepath, case_id, inv_name)
             return jsonify({
                 "status": "success", 
-                "filename": file.filename,
+                "filename": new_filename,
                 "case_id": case_id
             }), 200
         
         except Exception as e:
             logger.error(f"Parsing failed: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/investigations', methods=['GET'])
+def get_investigations():
+    query = """
+    MATCH (i:Investigation) 
+    RETURN i.case_id AS case_id, i.name AS name 
+    ORDER BY i.created_at DESC
+    """
+    try:
+        with driver.session() as session:
+            results = session.run(query)
+            data = [{"case_id": r["case_id"], "name": r["name"]} for r in results]
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error(f"Failed to fetch investigations: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     logger.info("Server starting on port 8000...")
