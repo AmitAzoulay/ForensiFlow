@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
+import { apiService } from "../services/api";
+import './GraphPanel.css';
 
 // ==========================================
-// VISUAL CONSTANTS & ICONS
+// CONSTANTS & HELPERS
 // ==========================================
 const GRAPH_SETTINGS = {
     NODE_RADIUS: 16,
@@ -24,13 +26,9 @@ const ICONS_SVG = {
     SERVICE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%238b5cf6"><path d="M4 11h16v2H4zm0-4h16v2H4zm0 8h16v2H4zm-2-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H2c-1.1 0-2-.9-2-2V7zm2 10h16V7H4v10z"/></svg>`
 };
 
-// ==========================================
-// CANVAS RENDER HELPERS
-// ==========================================
-const drawNodeOnCanvas = (node, ctx, globalScale, nodeIcons) => {
+const drawNodeOnCanvas = (node: any, ctx: CanvasRenderingContext2D, globalScale: number, nodeIcons: Record<string, HTMLImageElement>) => {
     const label = node.properties?.name || node.name || node.id;
     const iconSize = 26;
-
     const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
 
     if (iconImage) {
@@ -49,12 +47,12 @@ const drawNodeOnCanvas = (node, ctx, globalScale, nodeIcons) => {
     ctx.fillStyle = '#1e293b';
 
     const lines = label.split('\n');
-    lines.forEach((line, index) => {
+    lines.forEach((line: string, index: number) => {
         ctx.fillText(line, node.x, node.y + iconSize / 2 + 4 + (index * fontSize));
     });
 };
 
-const drawCurvedLinkOnCanvas = (link, ctx) => {
+const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D) => {
     const startNode = link.source;
     const endNode = link.target;
 
@@ -65,7 +63,6 @@ const drawCurvedLinkOnCanvas = (link, ctx) => {
     if (distance === 0) return;
 
     const totalOffset = GRAPH_SETTINGS.NODE_RADIUS + GRAPH_SETTINGS.NODE_MARGIN;
-
     const normalVector = { x: -deltaY / distance, y: deltaX / distance };
     const controlPointOffset = (link.curvature || 0) * distance;
     const controlPoint = {
@@ -128,42 +125,32 @@ const drawCurvedLinkOnCanvas = (link, ctx) => {
 };
 
 // ==========================================
-// MAIN COMPONENT
+// COMPONENT
 // ==========================================
-const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-    const [status, setStatus] = useState('idle');
-    const [mode, setMode] = useState('new');
+interface GraphPanelProps {
+    graphData: { nodes: any[], links: any[] };
+    onLinkClick: (link: any) => void;
+    onDataLoaded: (data: any, caseId: string) => void;
+    children?: React.ReactNode;
+}
 
-    const [investigationsList, setInvestigationsList] = useState([]);
+const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataLoaded, children }) => {
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+    const [mode, setMode] = useState<'new' | 'existing'>('new');
+    const [investigationsList, setInvestigationsList] = useState<any[]>([]);
     const [selectedCaseId, setSelectedCaseId] = useState('');
     const [newInvestigationName, setNewInvestigationName] = useState('');
-    const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
 
-    const [nodeIcons, setNodeIcons] = useState({});
+    const containerRef = useRef<HTMLDivElement>(null);
+    const graphRef = useRef<any>(null);
 
-    const containerRef = useRef(null);
-    const graphRef = useRef(null);
-
+    // Initialize node icons
     useEffect(() => {
-        const loadInvestigations = async () => {
-            try {
-                const response = await fetch('http://localhost:8000/api/investigations');
-                const data = await response.json();
-                setInvestigationsList(data);
-                if (data.length > 0 && !selectedCaseId) {
-                    setSelectedCaseId(data[0].case_id);
-                }
-            } catch (error) {
-                console.error("Failed to load investigation history:", error);
-            }
-        };
-        loadInvestigations();
-    }, []);
-
-    useEffect(() => {
-        const loadSingleImage = (svgString) => {
+        const loadSingleImage = (svgString: string) => {
             const img = new Image();
             img.src = svgString;
             return img;
@@ -180,6 +167,23 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
         });
     }, []);
 
+    // Load available investigations on mount
+    useEffect(() => {
+        const loadInvestigations = async () => {
+            try {
+                const data = await apiService.getInvestigations();
+                setInvestigationsList(data);
+                if (data.length > 0 && !selectedCaseId) {
+                    setSelectedCaseId(data[0].case_id);
+                }
+            } catch (error) {
+                console.error("Failed to load investigation history:", error);
+            }
+        };
+        loadInvestigations();
+    }, [selectedCaseId]);
+
+    // Handle container resizing
     useEffect(() => {
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
@@ -190,12 +194,11 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
         return () => resizeObserver.disconnect();
     }, []);
 
+    // Filter logic
     const filteredGraphData = useMemo(() => {
-        if (!graphData || !graphData.links) return graphData;
-        if (searchQuery.trim() === '') return graphData;
+        if (!graphData || !graphData.links || searchQuery.trim() === '') return graphData;
 
         const lowerCaseQuery = searchQuery.toLowerCase();
-
         const matchedNodeIds = new Set(
             graphData.nodes
                 .filter(n => {
@@ -208,7 +211,6 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
         const keptLinks = graphData.links.filter(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-
             if (matchedNodeIds.has(sourceId) || matchedNodeIds.has(targetId)) return true;
 
             const linkTypeStr = String(link.type || '').toLowerCase();
@@ -227,15 +229,15 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
         });
 
         const keptNodes = graphData.nodes.filter(n => contextNodeIds.has(n.id));
-
         return { nodes: keptNodes, links: keptLinks };
     }, [graphData, searchQuery]);
 
+    // Apply curvature to duplicate links
     const graphDataWithCurvature = useMemo(() => {
         if (!filteredGraphData || !filteredGraphData.links) return filteredGraphData;
 
         const linksWithCurvature = [...filteredGraphData.links];
-        const connectionCounter = {};
+        const connectionCounter: Record<string, number> = {};
 
         linksWithCurvature.forEach(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
@@ -243,7 +245,6 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
             const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
 
             if (!connectionCounter[pairId]) connectionCounter[pairId] = 0;
-
             link.pairIndex = connectionCounter[pairId];
             connectionCounter[pairId]++;
             link.isReversed = sourceId > targetId;
@@ -257,13 +258,13 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
             const totalConnections = connectionCounter[pairId];
             const baseCurvatureStep = 0.15;
             const centralOffset = link.pairIndex - (totalConnections - 1) / 2;
-
             link.curvature = centralOffset * baseCurvatureStep * (link.isReversed ? -1 : 1);
         });
 
         return { nodes: filteredGraphData.nodes, links: linksWithCurvature };
     }, [filteredGraphData]);
 
+    // Physics tuning
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
             graphRef.current.d3Force('charge').strength(-120);
@@ -277,8 +278,7 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
         if (!selectedCaseId) return;
         setStatus('uploading');
         try {
-            const response = await fetch(`http://localhost:8000/api/graph-data?case_id=${selectedCaseId}`);
-            const data = await response.json();
+            const data = await apiService.getGraphData(selectedCaseId);
             onDataLoaded(data, selectedCaseId);
             setStatus('success');
             setSearchQuery('');
@@ -291,18 +291,9 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
     const processNewInvestigation = async () => {
         if (!selectedFile) return;
         setStatus('uploading');
-
-        const formData = new FormData();
-        formData.append('evtxFile', selectedFile);
-        formData.append('invName', newInvestigationName || 'Investigation');
-
         try {
-            const uploadRes = await fetch('http://localhost:8000/api/parse-evtx', { method: 'POST', body: formData });
-            const uploadResult = await uploadRes.json();
-
-            const graphRes = await fetch(`http://localhost:8000/api/graph-data?case_id=${uploadResult.case_id}`);
-            const data = await graphRes.json();
-
+            const uploadResult = await apiService.uploadEvtx(selectedFile, newInvestigationName || 'Investigation');
+            const data = await apiService.getGraphData(uploadResult.case_id);
             onDataLoaded(data, uploadResult.case_id);
             setStatus('success');
             setNewInvestigationName('');
@@ -314,10 +305,8 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
     };
 
     return (
-        <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
-
-            {/* Toolbar Full Width */}
-            <div className="top-toolbar" style={{ width: '100%', boxSizing: 'border-box' }}>
+        <div className="graph-panel-container">
+            <div className="top-toolbar">
                 <div className="toolbar-left">
                     <h2 className="toolbar-title">ForensiFlow</h2>
                     <div className="mode-toggle">
@@ -332,7 +321,7 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
                     </div>
                 </div>
 
-                <div className="toolbar-controls" style={{ flexWrap: 'wrap' }}>
+                <div className="toolbar-controls">
                     {mode === 'new' ? (
                         <>
                             <input
@@ -346,7 +335,7 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
                                 type="file"
                                 className="modern-file-input"
                                 accept=".evtx"
-                                onChange={(e) => setSelectedFile(e.target.files[0])}
+                                onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])}
                             />
                             <button className="btn-primary" onClick={processNewInvestigation} disabled={!selectedFile || status === 'uploading'}>
                                 {status === 'uploading' ? 'Analyzing...' : 'Analyze'}
@@ -374,23 +363,20 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
                 </div>
             </div>
 
-            {/* Search Bar Full Width */}
             {graphData.nodes.length > 0 && (
-                <div className="search-bar-row" style={{ padding: '12px 24px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', width: '100%', boxSizing: 'border-box' }}>
+                <div className="search-bar-row">
                     <input
                         type="text"
-                        className="modern-input"
-                        placeholder="🔍 Filter graph by process name, event ID, action type, or time (e.g., net.exe, 4624, 2026-01-09)..."
+                        className="modern-input full-width"
+                        placeholder="Filter graph by process name, event ID, action type, or time..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{ width: '100%', maxWidth: '100%' }}
                     />
                 </div>
             )}
 
-            {/* Content Area: Graph (Left) & LogPanel (Right) */}
-            <div className="content-area" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-                <div className="canvas-wrapper" ref={containerRef} style={{ flex: 1, position: 'relative' }}>
+            <div className="content-area">
+                <div className="canvas-wrapper" ref={containerRef}>
                     {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
                         <ForceGraph2D
                             ref={graphRef}
@@ -402,11 +388,9 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
                             nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
                             linkCanvasObjectMode={() => 'replace'}
                             linkCanvasObject={(link, ctx) => drawCurvedLinkOnCanvas(link, ctx)}
-
-                            /* ADDED: This creates the hidden interactive hitboxes for the curved lines */
                             linkPointerAreaPaint={(link, color, ctx) => {
-                                const startNode = link.source;
-                                const endNode = link.target;
+                                const startNode = link.source as any;
+                                const endNode = link.target as any;
 
                                 if (!startNode || !endNode || startNode.x === undefined || endNode.x === undefined) return;
 
@@ -424,13 +408,12 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
                                 };
 
                                 ctx.beginPath();
-                                ctx.strokeStyle = color; // The unique color used for hit detection
-                                ctx.lineWidth = 12; // Clickable area thickness
+                                ctx.strokeStyle = color;
+                                ctx.lineWidth = 12;
                                 ctx.moveTo(startNode.x, startNode.y);
                                 ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, endNode.x, endNode.y);
                                 ctx.stroke();
                             }}
-
                             nodePointerAreaPaint={(node, color, ctx) => {
                                 ctx.fillStyle = color;
                                 ctx.beginPath();
@@ -444,8 +427,6 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
                         </div>
                     )}
                 </div>
-
-                {/* Render the LogPanel passed from App.tsx */}
                 {children}
             </div>
         </div>
