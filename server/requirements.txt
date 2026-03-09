@@ -3,3 +3,4 @@ flask-cors
 python-dotenv
 neo4j
 python-evtx
+requests

@@ -1,154 +1,323 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 
-// --- VISUAL CONSTANTS ---
-const NODE_RADIUS = 16;
-const LINK_COLOR = '#94a3b8'; // softer gray for professional look
-const LINK_WIDTH = 2;
-const ARROW_LEN = 10;
-const ARROW_WIDTH = 5;
-const NODE_MARGIN = 14;
+// ==========================================
+// VISUAL CONSTANTS & ICONS
+// ==========================================
+const GRAPH_SETTINGS = {
+    NODE_RADIUS: 16,
+    LINK_COLOR: '#94a3b8',
+    LINK_WIDTH: 2,
+    ARROW_LENGTH: 10,
+    ARROW_WIDTH: 5,
+    NODE_MARGIN: 14,
+    LABEL_FONT_SIZE: 4
+};
 
-// --- ICONS CONFIGURATION ---
-const PROCESS_ICON = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2310b981"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>`;
-const REGISTRY_ICON = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2364748b"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>`;
-const USER_ICON = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%233b82f6"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`;
-const COMPUTER_ICON = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23475569"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>`;
-const FILE_ICON = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2306b6d4"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`;
+const ICONS_SVG = {
+    PROCESS: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2310b981"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>`,
+    REGISTRY: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2364748b"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>`,
+    USER: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%233b82f6"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
+    COMPUTER: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23475569"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>`,
+    FILE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2306b6d4"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`,
+    TASK: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23f59e0b"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm4-4H7v-2h9v2zm0-4H7V7h9v2z"/></svg>`,
+    SERVICE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%238b5cf6"><path d="M4 11h16v2H4zm0-4h16v2H4zm0 8h16v2H4zm-2-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H2c-1.1 0-2-.9-2-2V7zm2 10h16V7H4v10z"/></svg>`
+};
 
-const GraphPanel = ({ graphData, onLinkClick, onDataLoaded }) => {
-    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [status, setStatus] = useState('idle');
+// ==========================================
+// CANVAS RENDER HELPERS
+// ==========================================
+const drawNodeOnCanvas = (node, ctx, globalScale, nodeIcons) => {
+    const label = node.properties?.name || node.name || node.id;
+    const iconSize = 26;
 
-    const [mode, setMode] = useState('new');
-    const [investigations, setInvestigations] = useState([]);
-    const [selectedCaseId, setSelectedCaseId] = useState('');
-    const [invName, setInvName] = useState('');
+    const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
 
-    const [images, setImages] = useState({
-        process: null, user: null, computer: null, file: null, registry: null
+    if (iconImage) {
+        ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
+    } else {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = '#64748b';
+        ctx.fill();
+    }
+
+    const fontSize = 11 / globalScale;
+    ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#1e293b';
+
+    const lines = label.split('\n');
+    lines.forEach((line, index) => {
+        ctx.fillText(line, node.x, node.y + iconSize / 2 + 4 + (index * fontSize));
     });
+};
+
+const drawCurvedLinkOnCanvas = (link, ctx) => {
+    const startNode = link.source;
+    const endNode = link.target;
+
+    const deltaX = endNode.x - startNode.x;
+    const deltaY = endNode.y - startNode.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (distance === 0) return;
+
+    const totalOffset = GRAPH_SETTINGS.NODE_RADIUS + GRAPH_SETTINGS.NODE_MARGIN;
+
+    const normalVector = { x: -deltaY / distance, y: deltaX / distance };
+    const controlPointOffset = (link.curvature || 0) * distance;
+    const controlPoint = {
+        x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
+        y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
+    };
+
+    const distToControlEnd = Math.sqrt(Math.pow(endNode.x - controlPoint.x, 2) + Math.pow(endNode.y - controlPoint.y, 2));
+    const distToControlStart = Math.sqrt(Math.pow(startNode.x - controlPoint.x, 2) + Math.pow(startNode.y - controlPoint.y, 2));
+
+    if (distToControlEnd === 0 || distToControlStart === 0) return;
+
+    const targetTipX = endNode.x - ((endNode.x - controlPoint.x) / distToControlEnd) * totalOffset;
+    const targetTipY = endNode.y - ((endNode.y - controlPoint.y) / distToControlEnd) * totalOffset;
+    const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
+    const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
+
+    ctx.beginPath();
+    ctx.strokeStyle = GRAPH_SETTINGS.LINK_COLOR;
+    ctx.lineWidth = GRAPH_SETTINGS.LINK_WIDTH;
+    ctx.moveTo(sourceTipX, sourceTipY);
+    ctx.quadraticCurveTo(
+        controlPoint.x,
+        controlPoint.y,
+        targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8),
+        targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8)
+    );
+    ctx.stroke();
+
+    const baseX = targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
+    const baseY = targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
+
+    ctx.beginPath();
+    ctx.fillStyle = GRAPH_SETTINGS.LINK_COLOR;
+    ctx.moveTo(targetTipX, targetTipY);
+    ctx.lineTo(baseX - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY + ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
+    ctx.lineTo(baseX + ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
+    ctx.closePath();
+    ctx.fill();
+
+    const label = link.type;
+    const textPos = {
+        x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
+        y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
+    };
+
+    ctx.font = `600 ${GRAPH_SETTINGS.LABEL_FONT_SIZE}px Inter, sans-serif`;
+    const textWidth = ctx.measureText(label).width;
+    const bgDimensions = [textWidth, GRAPH_SETTINGS.LABEL_FONT_SIZE].map(n => n + GRAPH_SETTINGS.LABEL_FONT_SIZE * 0.6);
+
+    ctx.save();
+    ctx.translate(textPos.x, textPos.y);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2, bgDimensions[0], bgDimensions[1]);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#475569';
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+};
+
+// ==========================================
+// MAIN COMPONENT
+// ==========================================
+const GraphPanel = ({ graphData, onLinkClick, onDataLoaded, children }) => {
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [status, setStatus] = useState('idle');
+    const [mode, setMode] = useState('new');
+
+    const [investigationsList, setInvestigationsList] = useState([]);
+    const [selectedCaseId, setSelectedCaseId] = useState('');
+    const [newInvestigationName, setNewInvestigationName] = useState('');
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const [nodeIcons, setNodeIcons] = useState({});
 
     const containerRef = useRef(null);
     const graphRef = useRef(null);
 
-    const fetchInvestigations = async () => {
-        try {
-            const res = await fetch('http://localhost:8000/api/investigations');
-            const data = await res.json();
-            setInvestigations(data);
-            if (data.length > 0 && !selectedCaseId) {
-                setSelectedCaseId(data[0].case_id);
-            }
-        } catch (error) {
-            console.error("Failed to load investigations:", error);
-        }
-    };
-
     useEffect(() => {
-        fetchInvestigations();
+        const loadInvestigations = async () => {
+            try {
+                const response = await fetch('http://localhost:8000/api/investigations');
+                const data = await response.json();
+                setInvestigationsList(data);
+                if (data.length > 0 && !selectedCaseId) {
+                    setSelectedCaseId(data[0].case_id);
+                }
+            } catch (error) {
+                console.error("Failed to load investigation history:", error);
+            }
+        };
+        loadInvestigations();
     }, []);
 
     useEffect(() => {
-        if (graphRef.current && graphData.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-120);
-            graphRef.current.d3Force('link').distance(180);
-            graphRef.current.d3Force('center').strength(0.05);
-            graphRef.current.d3ReheatSimulation();
-        }
-    }, [graphData]);
-
-    useEffect(() => {
-        const loadImg = (src) => {
+        const loadSingleImage = (svgString) => {
             const img = new Image();
-            img.src = src;
+            img.src = svgString;
             return img;
         };
 
-        const pImg = loadImg(PROCESS_ICON);
-        const uImg = loadImg(USER_ICON);
-        const cImg = loadImg(COMPUTER_ICON);
-        const fImg = loadImg(FILE_ICON);
-        const rImg = loadImg(REGISTRY_ICON);
-
-        pImg.onload = () => setImages(prev => ({ ...prev, process: pImg }));
-        uImg.onload = () => setImages(prev => ({ ...prev, user: uImg }));
-        cImg.onload = () => setImages(prev => ({ ...prev, computer: cImg }));
-        fImg.onload = () => setImages(prev => ({ ...prev, file: fImg }));
-        rImg.onload = () => setImages(prev => ({ ...prev, registry: rImg }));
+        setNodeIcons({
+            process: loadSingleImage(ICONS_SVG.PROCESS),
+            user: loadSingleImage(ICONS_SVG.USER),
+            computer: loadSingleImage(ICONS_SVG.COMPUTER),
+            file: loadSingleImage(ICONS_SVG.FILE),
+            registry: loadSingleImage(ICONS_SVG.REGISTRY),
+            task: loadSingleImage(ICONS_SVG.TASK),
+            service: loadSingleImage(ICONS_SVG.SERVICE),
+        });
     }, []);
 
     useEffect(() => {
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
-                const { width, height } = entry.contentRect;
-                setDimensions({ width, height });
+                setDimensions({ width: entry.contentRect.width, height: entry.contentRect.height });
             }
         });
         if (containerRef.current) resizeObserver.observe(containerRef.current);
         return () => resizeObserver.disconnect();
     }, []);
 
-    const handleLoadExisting = async () => {
+    const filteredGraphData = useMemo(() => {
+        if (!graphData || !graphData.links) return graphData;
+        if (searchQuery.trim() === '') return graphData;
+
+        const lowerCaseQuery = searchQuery.toLowerCase();
+
+        const matchedNodeIds = new Set(
+            graphData.nodes
+                .filter(n => {
+                    const label = n.properties?.name || n.name || n.id;
+                    return label.toLowerCase().includes(lowerCaseQuery);
+                })
+                .map(n => n.id)
+        );
+
+        const keptLinks = graphData.links.filter(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+
+            if (matchedNodeIds.has(sourceId) || matchedNodeIds.has(targetId)) return true;
+
+            const linkTypeStr = String(link.type || '').toLowerCase();
+            const eventIdStr = String(link.details?.event_id || '').toLowerCase();
+            const timestampStr = String(link.details?.timestamp || '').toLowerCase();
+
+            return linkTypeStr.includes(lowerCaseQuery) ||
+                eventIdStr.includes(lowerCaseQuery) ||
+                timestampStr.includes(lowerCaseQuery);
+        });
+
+        const contextNodeIds = new Set(matchedNodeIds);
+        keptLinks.forEach(link => {
+            contextNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
+            contextNodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
+        });
+
+        const keptNodes = graphData.nodes.filter(n => contextNodeIds.has(n.id));
+
+        return { nodes: keptNodes, links: keptLinks };
+    }, [graphData, searchQuery]);
+
+    const graphDataWithCurvature = useMemo(() => {
+        if (!filteredGraphData || !filteredGraphData.links) return filteredGraphData;
+
+        const linksWithCurvature = [...filteredGraphData.links];
+        const connectionCounter = {};
+
+        linksWithCurvature.forEach(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
+
+            if (!connectionCounter[pairId]) connectionCounter[pairId] = 0;
+
+            link.pairIndex = connectionCounter[pairId];
+            connectionCounter[pairId]++;
+            link.isReversed = sourceId > targetId;
+        });
+
+        linksWithCurvature.forEach(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
+
+            const totalConnections = connectionCounter[pairId];
+            const baseCurvatureStep = 0.15;
+            const centralOffset = link.pairIndex - (totalConnections - 1) / 2;
+
+            link.curvature = centralOffset * baseCurvatureStep * (link.isReversed ? -1 : 1);
+        });
+
+        return { nodes: filteredGraphData.nodes, links: linksWithCurvature };
+    }, [filteredGraphData]);
+
+    useEffect(() => {
+        if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
+            graphRef.current.d3Force('charge').strength(-120);
+            graphRef.current.d3Force('link').distance(180);
+            graphRef.current.d3Force('center').strength(0.05);
+            graphRef.current.d3ReheatSimulation();
+        }
+    }, [graphDataWithCurvature]);
+
+    const fetchExistingInvestigation = async () => {
         if (!selectedCaseId) return;
         setStatus('uploading');
         try {
-            const graphResponse = await fetch(`http://localhost:8000/api/graph-data?case_id=${selectedCaseId}`);
-            const data = await graphResponse.json();
+            const response = await fetch(`http://localhost:8000/api/graph-data?case_id=${selectedCaseId}`);
+            const data = await response.json();
             onDataLoaded(data, selectedCaseId);
             setStatus('success');
+            setSearchQuery('');
         } catch (error) {
             console.error(error);
             setStatus('error');
         }
     };
 
-    const handleUpload = async () => {
+    const processNewInvestigation = async () => {
         if (!selectedFile) return;
         setStatus('uploading');
 
         const formData = new FormData();
         formData.append('evtxFile', selectedFile);
-        formData.append('invName', invName || 'Investigation');
+        formData.append('invName', newInvestigationName || 'Investigation');
 
         try {
-            const uploadResponse = await fetch('http://localhost:8000/api/parse-evtx', {
-                method: 'POST', body: formData
-            });
-            const uploadResult = await uploadResponse.json();
+            const uploadRes = await fetch('http://localhost:8000/api/parse-evtx', { method: 'POST', body: formData });
+            const uploadResult = await uploadRes.json();
 
-            const graphResponse = await fetch(`http://localhost:8000/api/graph-data?case_id=${uploadResult.case_id}`);
-            const data = await graphResponse.json();
+            const graphRes = await fetch(`http://localhost:8000/api/graph-data?case_id=${uploadResult.case_id}`);
+            const data = await graphRes.json();
 
             onDataLoaded(data, uploadResult.case_id);
-            fetchInvestigations();
             setStatus('success');
-            setInvName('');
+            setNewInvestigationName('');
+            setSearchQuery('');
         } catch (error) {
             console.error(error);
             setStatus('error');
         }
     };
 
-    const getNodeLabel = (node) => {
-        const props = node.properties || {};
-        const labelName = props.name || node.name || node.id;
-        return node.label === 'Process' ? `${labelName}` : labelName;
-    };
-
-    const getNodeIcon = (label) => {
-        if (label === 'User') return images.user;
-        if (label === 'Computer') return images.computer;
-        if (label === 'File') return images.file;
-        if (label === 'Registry') return images.registry;
-        return images.process;
-    };
-
     return (
-        <div className="graph-panel">
-            {/* Top Toolbar */}
-            <div className="top-toolbar">
+        <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
+
+            {/* Toolbar Full Width */}
+            <div className="top-toolbar" style={{ width: '100%', boxSizing: 'border-box' }}>
                 <div className="toolbar-left">
                     <h2 className="toolbar-title">ForensiFlow</h2>
                     <div className="mode-toggle">
@@ -163,15 +332,15 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded }) => {
                     </div>
                 </div>
 
-                <div className="toolbar-controls">
+                <div className="toolbar-controls" style={{ flexWrap: 'wrap' }}>
                     {mode === 'new' ? (
                         <>
                             <input
                                 type="text"
                                 className="modern-input"
-                                placeholder="Enter Investigation Name"
-                                value={invName}
-                                onChange={(e) => setInvName(e.target.value)}
+                                placeholder="Investigation Name"
+                                value={newInvestigationName}
+                                onChange={(e) => setNewInvestigationName(e.target.value)}
                             />
                             <input
                                 type="file"
@@ -179,8 +348,8 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded }) => {
                                 accept=".evtx"
                                 onChange={(e) => setSelectedFile(e.target.files[0])}
                             />
-                            <button className="btn-primary" onClick={handleUpload} disabled={!selectedFile || status === 'uploading'}>
-                                {status === 'uploading' ? 'Processing...' : 'Analyze'}
+                            <button className="btn-primary" onClick={processNewInvestigation} disabled={!selectedFile || status === 'uploading'}>
+                                {status === 'uploading' ? 'Analyzing...' : 'Analyze'}
                             </button>
                         </>
                     ) : (
@@ -191,13 +360,13 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded }) => {
                                 onChange={(e) => setSelectedCaseId(e.target.value)}
                             >
                                 <option value="" disabled>Select an Investigation...</option>
-                                {investigations.map(inv => (
+                                {investigationsList.map(inv => (
                                     <option key={inv.case_id} value={inv.case_id}>
                                         {inv.name} ({inv.case_id.substring(0, 8)})
                                     </option>
                                 ))}
                             </select>
-                            <button className="btn-primary" onClick={handleLoadExisting} disabled={!selectedCaseId || status === 'uploading'}>
+                            <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading'}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
                         </>
@@ -205,119 +374,79 @@ const GraphPanel = ({ graphData, onLinkClick, onDataLoaded }) => {
                 </div>
             </div>
 
-            {/* Canvas */}
-            <div className="canvas-wrapper" ref={containerRef}>
-                {dimensions.width > 0 && dimensions.height > 0 && graphData.nodes.length > 0 ? (
-                    <ForceGraph2D
-                        ref={graphRef}
-                        width={dimensions.width}
-                        height={dimensions.height}
-                        graphData={graphData}
-                        onLinkClick={onLinkClick}
-                        cooldownTicks={100}
-
-                        nodeCanvasObject={(node, ctx, globalScale) => {
-                            const label = getNodeLabel(node);
-                            const size = 26;
-                            const img = getNodeIcon(node.label);
-
-                            if (img) {
-                                ctx.drawImage(img, node.x - size / 2, node.y - size / 2, size, size);
-                            } else {
-                                ctx.beginPath();
-                                ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI);
-                                ctx.fillStyle = '#64748b';
-                                ctx.fill();
-                            }
-
-                            const fontSize = 11 / globalScale;
-                            ctx.font = `500 ${fontSize}px Inter, sans-serif`;
-                            ctx.textAlign = 'center';
-                            ctx.textBaseline = 'top';
-                            ctx.fillStyle = '#1e293b';
-
-                            const lines = label.split('\n');
-                            lines.forEach((line, i) => {
-                                ctx.fillText(line, node.x, node.y + size / 2 + 4 + (i * fontSize));
-                            });
-                        }}
-
-                        nodePointerAreaPaint={(node, color, ctx) => {
-                            const size = 26;
-                            ctx.fillStyle = color;
-                            ctx.beginPath();
-                            ctx.arc(node.x, node.y, size / 2 + 4, 0, 2 * Math.PI);
-                            ctx.fill();
-                        }}
-
-                        linkCanvasObjectMode={() => 'replace'}
-                        linkCanvasObject={(link, ctx) => {
-                            const start = { x: link.source.x, y: link.source.y };
-                            const end = { x: link.target.x, y: link.target.y };
-
-                            const dx = end.x - start.x;
-                            const dy = end.y - start.y;
-                            const length = Math.sqrt(dx * dx + dy * dy);
-                            const totalOffset = NODE_RADIUS + NODE_MARGIN;
-                            if (length < NODE_RADIUS * 2) return;
-
-                            const ux = dx / length;
-                            const uy = dy / length;
-
-                            const sourceX = start.x + ux * totalOffset;
-                            const sourceY = start.y + uy * totalOffset;
-                            const targetTipX = end.x - ux * totalOffset;
-                            const targetTipY = end.y - uy * totalOffset;
-
-                            // Line
-                            ctx.beginPath();
-                            ctx.strokeStyle = LINK_COLOR;
-                            ctx.lineWidth = LINK_WIDTH;
-                            ctx.moveTo(sourceX, sourceY);
-                            ctx.lineTo(targetTipX - ux * (ARROW_LEN * 0.8), targetTipY - uy * (ARROW_LEN * 0.8));
-                            ctx.stroke();
-
-                            // Arrowhead
-                            const baseX = targetTipX - ux * ARROW_LEN;
-                            const baseY = targetTipY - uy * ARROW_LEN;
-                            const leftX = baseX - uy * ARROW_WIDTH;
-                            const leftY = baseY + ux * ARROW_WIDTH;
-                            const rightX = baseX + uy * ARROW_WIDTH;
-                            const rightY = baseY - ux * ARROW_WIDTH;
-
-                            ctx.beginPath();
-                            ctx.fillStyle = LINK_COLOR;
-                            ctx.moveTo(targetTipX, targetTipY);
-                            ctx.lineTo(leftX, leftY);
-                            ctx.lineTo(rightX, rightY);
-                            ctx.closePath();
-                            ctx.fill();
-
-                            // Label
-                            const label = link.type;
-                            const fontSize = 4;
-                            const textPos = { x: start.x + (end.x - start.x) / 2, y: start.y + (end.y - start.y) / 2 };
-
-                            ctx.font = `600 ${fontSize}px Inter, sans-serif`;
-                            const textWidth = ctx.measureText(label).width;
-                            const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.6);
-
-                            ctx.save();
-                            ctx.translate(textPos.x, textPos.y);
-                            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-                            ctx.fillRect(-bckgDimensions[0] / 2, -bckgDimensions[1] / 2, ...bckgDimensions);
-                            ctx.textAlign = 'center';
-                            ctx.textBaseline = 'middle';
-                            ctx.fillStyle = '#475569';
-                            ctx.fillText(label, 0, 0);
-                            ctx.restore();
-                        }}
+            {/* Search Bar Full Width */}
+            {graphData.nodes.length > 0 && (
+                <div className="search-bar-row" style={{ padding: '12px 24px', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', width: '100%', boxSizing: 'border-box' }}>
+                    <input
+                        type="text"
+                        className="modern-input"
+                        placeholder="🔍 Filter graph by process name, event ID, action type, or time (e.g., net.exe, 4624, 2026-01-09)..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{ width: '100%', maxWidth: '100%' }}
                     />
-                ) : (
-                    <div className="placeholder">
-                        {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
-                    </div>
-                )}
+                </div>
+            )}
+
+            {/* Content Area: Graph (Left) & LogPanel (Right) */}
+            <div className="content-area" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                <div className="canvas-wrapper" ref={containerRef} style={{ flex: 1, position: 'relative' }}>
+                    {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
+                        <ForceGraph2D
+                            ref={graphRef}
+                            width={dimensions.width}
+                            height={dimensions.height}
+                            graphData={graphDataWithCurvature}
+                            onLinkClick={onLinkClick}
+                            cooldownTicks={100}
+                            nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
+                            linkCanvasObjectMode={() => 'replace'}
+                            linkCanvasObject={(link, ctx) => drawCurvedLinkOnCanvas(link, ctx)}
+
+                            /* ADDED: This creates the hidden interactive hitboxes for the curved lines */
+                            linkPointerAreaPaint={(link, color, ctx) => {
+                                const startNode = link.source;
+                                const endNode = link.target;
+
+                                if (!startNode || !endNode || startNode.x === undefined || endNode.x === undefined) return;
+
+                                const deltaX = endNode.x - startNode.x;
+                                const deltaY = endNode.y - startNode.y;
+                                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+                                if (distance === 0) return;
+
+                                const normalVector = { x: -deltaY / distance, y: deltaX / distance };
+                                const controlPointOffset = (link.curvature || 0) * distance;
+                                const controlPoint = {
+                                    x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
+                                    y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
+                                };
+
+                                ctx.beginPath();
+                                ctx.strokeStyle = color; // The unique color used for hit detection
+                                ctx.lineWidth = 12; // Clickable area thickness
+                                ctx.moveTo(startNode.x, startNode.y);
+                                ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, endNode.x, endNode.y);
+                                ctx.stroke();
+                            }}
+
+                            nodePointerAreaPaint={(node, color, ctx) => {
+                                ctx.fillStyle = color;
+                                ctx.beginPath();
+                                ctx.arc(node.x, node.y, 13 + 4, 0, 2 * Math.PI);
+                                ctx.fill();
+                            }}
+                        />
+                    ) : (
+                        <div className="placeholder">
+                            {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
+                        </div>
+                    )}
+                </div>
+
+                {/* Render the LogPanel passed from App.tsx */}
+                {children}
             </div>
         </div>
     );
