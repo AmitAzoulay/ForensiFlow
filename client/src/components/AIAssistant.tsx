@@ -21,10 +21,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId }) => {
     }, [messages]);
 
     useEffect(() => {
+        setMessages([]);
+    }, [caseId]);
+
+    useEffect(() => {
         if (isOpen && messages.length === 0 && caseId) {
             handleSendMessage("Provide a single-paragraph forensic summary of this investigation.");
         }
-    }, [isOpen, caseId]);
+    }, [isOpen, caseId, messages.length]);
 
     const handleSendMessage = async (textOverride?: string) => {
         const textToProcess = textOverride || inputValue;
