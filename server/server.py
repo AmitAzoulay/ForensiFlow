@@ -106,6 +106,15 @@ def process_ai_chat():
     except Exception as e:
         logger.error(f"AI Chat processing error: {e}")
         return jsonify({"error": "Failed to process AI request"}), 500
+    
+@app.route('/api/investigations/<case_id>', methods=['DELETE'])
+def delete_investigation(case_id):
+    try:
+        db_client.delete_investigation(case_id)
+        return jsonify({"status": "success", "message": "Investigation deleted successfully"}), 200
+    except Exception as e:
+        logger.error(f"Failed to delete investigation: {e}")
+        return jsonify({"error": "Failed to delete investigation"}), 500
 
 if __name__ == '__main__':
     logger.info("ForensiFlow API Server starting on port 8000...")

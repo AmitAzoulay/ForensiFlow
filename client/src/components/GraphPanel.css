@@ -123,3 +123,28 @@
     font-size: 1rem;
     font-weight: 500;
 }
+
+.btn-danger-icon {
+    padding: 8px 12px;
+    background-color: #fee2e2;
+    color: #ef4444;
+    border: 1px solid #f87171;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-danger-icon:hover:not(:disabled) {
+    background-color: #fca5a5;
+    color: #b91c1c;
+}
+
+.btn-danger-icon:disabled {
+    background-color: #f1f5f9;
+    color: #94a3b8;
+    border-color: #cbd5e1;
+    cursor: not-allowed;
+}

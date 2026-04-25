@@ -100,3 +100,14 @@ class Neo4jClient:
         except Exception as e:
             logger.error(f"Database error during get_investigation_timeline: {e}")
             raise
+    def delete_investigation(self, case_id):
+        query = """
+        MATCH (n {case_id: $case_id})
+        DETACH DELETE n
+        """
+        try:
+            with self.driver.session() as session:
+                session.run(query, case_id=case_id)
+        except Exception as e:
+            logger.error(f"Database error during delete_investigation: {e}")
+            raise

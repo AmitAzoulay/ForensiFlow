@@ -134,6 +134,9 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
         proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
         file_obj = data_map.get('ObjectName', 'Unknown_Object')
         _insert_graph_relationship(tx, case_id, "Process", proc, "File", file_obj, "OBJECT_ACCESSED", details)
+    elif event_id == '1102':
+        user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
+        _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "AUDIT_LOG_CLEARED", details)
 
 
 def parse_and_store_evtx(filepath, case_id, case_name, db_client):
@@ -167,7 +170,15 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
 
                 data_items = root.findall(".//EventData/Data")
                 data_map = {item.get('Name'): (item.text or "") for item in data_items}
-
+                # Add this block to support UserData payloads like Event 1102
+                
+                if not data_map:
+                    user_data = root.find(".//UserData")
+                    if user_data is not None and len(user_data) > 0:
+                        for child in user_data[0]:
+                            clean_tag = child.tag.split('}')[-1]
+                            data_map[clean_tag] = child.text or ""
+                            
                 # Build SID mapping for user resolution
                 for sid_key, name_key in [('SubjectUserSid', 'SubjectUserName'), ('TargetUserSid', 'TargetUserName'), ('TargetSid', 'TargetUserName')]:
                     sid = data_map.get(sid_key)

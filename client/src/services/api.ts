@@ -41,5 +41,13 @@ export const apiService = {
 
         if (!response.ok) throw new Error('Failed to communicate with AI service');
         return response.json();
+    },
+
+    deleteInvestigation: async (caseId: string) => {
+        const response = await fetch(`${API_BASE_URL}/investigations/${caseId}`, {
+            method: 'DELETE'
+        });
+        if (!response.ok) throw new Error('Failed to delete investigation');
+        return response.json();
     }
 };
