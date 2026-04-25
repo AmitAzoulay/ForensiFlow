@@ -194,38 +194,75 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         return () => resizeObserver.disconnect();
     }, []);
 
-    // Filter logic
+    // Advanced Boolean Filter logic
     const filteredGraphData = useMemo(() => {
         if (!graphData || !graphData.links || searchQuery.trim() === '') return graphData;
 
-        const lowerCaseQuery = searchQuery.toLowerCase();
-        const matchedNodeIds = new Set(
-            graphData.nodes
-                .filter(n => {
-                    const label = n.properties?.name || n.name || n.id;
-                    return label.toLowerCase().includes(lowerCaseQuery);
-                })
-                .map(n => n.id)
-        );
+        // Helper to evaluate AND, OR, NOT logic
+        const evaluateMatch = (text: string, query: string) => {
+            if (!query) return true;
 
+            // Split into OR groups first
+            const orTerms = query.toLowerCase().split(/\s+or\s+/);
+
+            return orTerms.some(orTerm => {
+                // Split each OR group into AND requirements
+                const andTerms = orTerm.split(/\s+and\s+/);
+
+                return andTerms.every(andTerm => {
+                    let term = andTerm.trim();
+                    let isNot = false;
+
+                    // Check for NOT prefix
+                    if (term.startsWith('not ')) {
+                        isNot = true;
+                        term = term.substring(4).trim();
+                    } else if (term.startsWith('!')) {
+                        isNot = true;
+                        term = term.substring(1).trim();
+                    }
+
+                    if (!term) return true;
+
+                    const contains = text.includes(term);
+                    return isNot ? !contains : contains;
+                });
+            });
+        };
+
+        // Filter the relationships (links) based on the combined event text
         const keptLinks = graphData.links.filter(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            if (matchedNodeIds.has(sourceId) || matchedNodeIds.has(targetId)) return true;
 
-            const linkTypeStr = String(link.type || '').toLowerCase();
-            const eventIdStr = String(link.details?.event_id || '').toLowerCase();
-            const timestampStr = String(link.details?.timestamp || '').toLowerCase();
+            const sourceNode = graphData.nodes.find(n => n.id === sourceId);
+            const targetNode = graphData.nodes.find(n => n.id === targetId);
 
-            return linkTypeStr.includes(lowerCaseQuery) ||
-                eventIdStr.includes(lowerCaseQuery) ||
-                timestampStr.includes(lowerCaseQuery);
+            const sourceName = sourceNode ? String(sourceNode.properties?.name || sourceNode.name || '') : '';
+            const targetName = targetNode ? String(targetNode.properties?.name || targetNode.name || '') : '';
+            const linkTypeStr = String(link.type || '');
+            const eventIdStr = String(link.details?.event_id || '');
+            const timestampStr = String(link.details?.timestamp || '');
+
+            // Combine all data so we can search the entire context of the event
+            const searchableText = `${sourceName} ${targetName} ${linkTypeStr} ${eventIdStr} ${timestampStr}`.toLowerCase();
+
+            return evaluateMatch(searchableText, searchQuery);
         });
 
-        const contextNodeIds = new Set(matchedNodeIds);
+        // Collect the required nodes that survive the link filtering
+        const contextNodeIds = new Set();
         keptLinks.forEach(link => {
             contextNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
             contextNodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
+        });
+
+        // Edge case fallback: If a user explicitly searches for a node name that has no surviving links
+        graphData.nodes.forEach(n => {
+            const label = String(n.properties?.name || n.name || n.id || '').toLowerCase();
+            if (evaluateMatch(label, searchQuery)) {
+                contextNodeIds.add(n.id);
+            }
         });
 
         const keptNodes = graphData.nodes.filter(n => contextNodeIds.has(n.id));
@@ -398,7 +435,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                     <input
                         type="text"
                         className="modern-input full-width"
-                        placeholder="Filter graph by process name, event ID, action type, or time..."
+                        placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
