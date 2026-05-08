@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
-import TimelineFilter from './TimeLineFilter';
+import TimelineFilter from './TimelineFilter';
 import './GraphPanel.css';
 import * as d3 from 'd3-force';
 
@@ -116,7 +116,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const [activeFilters, setActiveFilters] = useState<string[]>([]);
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
 
-    // Timeline States
     const [globalTimeBounds, setGlobalTimeBounds] = useState<{ min: number; max: number } | null>(null);
     const [timeRange, setTimeRange] = useState<{ start: number; end: number } | null>(null);
 
@@ -174,7 +173,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         return () => resizeObserver.disconnect();
     }, []);
 
-    // Calculate Global Time Bounds when graphData updates
     useEffect(() => {
         if (!graphData || !graphData.links || graphData.links.length === 0) {
             setGlobalTimeBounds(null);
@@ -237,7 +235,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             const isTargetVisible = keptNodes.some(n => n.id === targetId);
             if (!isSourceVisible || !isTargetVisible) return false;
 
-            // Apply Timeline Filter
             if (timeRange) {
                 const t = extractTimestamp(link);
                 if (t && (t < timeRange.start || t > timeRange.end)) {
@@ -262,7 +259,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         const isTimeFiltered = timeRange && globalTimeBounds &&
             (timeRange.start > globalTimeBounds.min || timeRange.end < globalTimeBounds.max);
 
-        // Filter out nodes that have no links left after search & timeline filtering
         const finalNodes = (searchQuery.trim() !== '' || isTimeFiltered)
             ? keptNodes.filter(n => finalNodeIds.has(n.id))
             : keptNodes;
@@ -423,109 +419,116 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                 </div>
             </div>
 
-            {graphData.nodes.length > 0 && (
-                <>
-                    <div className="filter-chips-row">
-                        <span className="filter-label">Quick Filter:</span>
-                        {[
-                            { id: 'user', label: 'Users' },
-                            { id: 'process', label: 'Processes' },
-                            { id: 'computer', label: 'Computers' },
-                            { id: 'file', label: 'Files' },
-                            { id: 'registry', label: 'Registry' },
-                            { id: 'service', label: 'Services' },
-                            { id: 'task', label: 'Scheduled Tasks' }
-                        ].map(cat => {
-                            const count = graphData.nodes.filter(n => n.label?.toLowerCase() === cat.id).length;
-                            if (count === 0) return null;
-                            return (
-                                <button
-                                    key={cat.id}
-                                    className={`chip ${activeFilters.includes(cat.id) ? 'active' : ''}`}
-                                    onClick={() => toggleFilter(cat.id)}
-                                    style={{ '--active-color': cat.color } as any}
-                                >
-                                    <span className="chip-count">{count}</span>
-                                    {cat.label}
-                                </button>
-                            );
-                        })}
-                        {activeFilters.length > 0 && (
-                            <button className="clear-filters" onClick={() => setActiveFilters([])}>
-                                Clear All
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="search-bar-row">
-                        <input
-                            type="text"
-                            className="modern-input full-width"
-                            placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-
-                    {/* TIMELINE FILTER INTEGRATION */}
-                    {globalTimeBounds && timeRange && (
-                        <TimelineFilter
-                            minTime={globalTimeBounds.min}
-                            maxTime={globalTimeBounds.max}
-                            startTime={timeRange.start}
-                            endTime={timeRange.end}
-                            onChange={(start, end) => setTimeRange({ start, end })}
-                        />
-                    )}
-                </>
-            )}
-
             <div className="content-area">
-                <div className="canvas-wrapper" ref={containerRef}>
-                    {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
-                        <ForceGraph2D
-                            ref={graphRef}
-                            width={dimensions.width}
-                            height={dimensions.height}
-                            graphData={graphDataWithCurvature}
-                            onLinkClick={onLinkClick}
-                            cooldownTicks={100}
-                            nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
-                            linkCanvasObjectMode={() => 'replace'}
-                            linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
-                            linkPointerAreaPaint={(link, color, ctx) => {
-                                const startNode = link.source as any;
-                                const endNode = link.target as any;
-                                if (!startNode || !endNode || startNode.x === undefined || endNode.x === undefined) return;
-                                const deltaX = endNode.x - startNode.x;
-                                const deltaY = endNode.y - startNode.y;
-                                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                                if (distance === 0) return;
-                                const normalVector = { x: -deltaY / distance, y: deltaX / distance };
-                                const controlPointOffset = (link.curvature || 0) * distance;
-                                const controlPoint = {
-                                    x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
-                                    y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
-                                };
-                                ctx.beginPath();
-                                ctx.strokeStyle = color;
-                                ctx.lineWidth = 12;
-                                ctx.moveTo(startNode.x, startNode.y);
-                                ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, endNode.x, endNode.y);
-                                ctx.stroke();
-                            }}
-                            nodePointerAreaPaint={(node, color, ctx) => {
-                                ctx.fillStyle = color;
-                                ctx.beginPath();
-                                ctx.arc(node.x, node.y, 13 + 4, 0, 2 * Math.PI);
-                                ctx.fill();
-                            }}
-                        />
-                    ) : (
-                        <div className="placeholder">
-                            {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
+                <div
+                    className="graph-main-pane"
+                    style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}
+                >
+                    {graphData.nodes.length > 0 && (
+                        <div className="filters-wrapper">
+                            <div className="filter-chips-row">
+                                <span className="filter-label">Quick Filter:</span>
+                                {[
+                                    { id: 'user', label: 'Users' },
+                                    { id: 'process', label: 'Processes' },
+                                    { id: 'computer', label: 'Computers' },
+                                    { id: 'file', label: 'Files' },
+                                    { id: 'registry', label: 'Registry' },
+                                    { id: 'service', label: 'Services' },
+                                    { id: 'task', label: 'Scheduled Tasks' }
+                                ].map(cat => {
+                                    const count = graphData.nodes.filter(n => n.label?.toLowerCase() === cat.id).length;
+                                    if (count === 0) return null;
+                                    return (
+                                        <button
+                                            key={cat.id}
+                                            className={`chip ${activeFilters.includes(cat.id) ? 'active' : ''}`}
+                                            onClick={() => toggleFilter(cat.id)}
+                                            style={{ '--active-color': cat.color } as any}
+                                        >
+                                            <span className="chip-count">{count}</span>
+                                            {cat.label}
+                                        </button>
+                                    );
+                                })}
+                                {activeFilters.length > 0 && (
+                                    <button className="clear-filters" onClick={() => setActiveFilters([])}>
+                                        Clear All
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* ADVANCED FILTER */}
+                            <div className="filter-chips-row" style={{ paddingTop: 0 }}>
+                                <span className="filter-label">Advanced Filter:</span>
+                                <input
+                                    type="text"
+                                    className="modern-input"
+                                    style={{ flex: 1, margin: 0 }}
+                                    placeholder="(e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
+                            </div>
+
+                            {globalTimeBounds && timeRange && (
+                                <TimelineFilter
+                                    minTime={globalTimeBounds.min}
+                                    maxTime={globalTimeBounds.max}
+                                    startTime={timeRange.start}
+                                    endTime={timeRange.end}
+                                    onChange={(start, end) => setTimeRange({ start, end })}
+                                />
+                            )}
                         </div>
                     )}
+
+                    <div className="canvas-wrapper" ref={containerRef} style={{ flex: 1, minHeight: 0 }}>
+                        {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
+                            <ForceGraph2D
+                                ref={graphRef}
+                                width={dimensions.width}
+                                height={dimensions.height}
+                                graphData={graphDataWithCurvature}
+                                onLinkClick={onLinkClick}
+                                cooldownTicks={100}
+                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
+                                linkCanvasObjectMode={() => 'replace'}
+                                linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
+                                linkPointerAreaPaint={(link, color, ctx) => {
+                                    const startNode = link.source as any;
+                                    const endNode = link.target as any;
+                                    if (!startNode || !endNode || startNode.x === undefined || endNode.x === undefined) return;
+                                    const deltaX = endNode.x - startNode.x;
+                                    const deltaY = endNode.y - startNode.y;
+                                    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                                    if (distance === 0) return;
+                                    const normalVector = { x: -deltaY / distance, y: deltaX / distance };
+                                    const controlPointOffset = (link.curvature || 0) * distance;
+                                    const controlPoint = {
+                                        x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
+                                        y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
+                                    };
+                                    ctx.beginPath();
+                                    ctx.strokeStyle = color;
+                                    ctx.lineWidth = 12;
+                                    ctx.moveTo(startNode.x, startNode.y);
+                                    ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, endNode.x, endNode.y);
+                                    ctx.stroke();
+                                }}
+                                nodePointerAreaPaint={(node, color, ctx) => {
+                                    ctx.fillStyle = color;
+                                    ctx.beginPath();
+                                    ctx.arc(node.x, node.y, 13 + 4, 0, 2 * Math.PI);
+                                    ctx.fill();
+                                }}
+                            />
+                        ) : (
+                            <div className="placeholder">
+                                {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
+                            </div>
+                        )}
+                    </div>
                 </div>
                 {children}
             </div>
