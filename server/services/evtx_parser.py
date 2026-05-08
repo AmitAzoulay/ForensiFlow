@@ -4,11 +4,18 @@ import Evtx.Evtx as evtx
 
 logger = logging.getLogger(__name__)
 
-def _insert_graph_relationship(tx, case_id, source_label, source_name, target_label, target_name, rel_type, details):
-    """
-    Executes the Cypher query to insert a relationship between two nodes in Neo4j.
-    """
-    if not source_name or not target_name or source_name in ['-', ''] or target_name in ['-', '']:
+def _insert_graph_relationship(tx, case_id, source_label, source_data, target_label, target_data, rel_type, details):
+    if isinstance(source_data, tuple):
+        s_id, s_name = source_data
+    else:
+        s_id, s_name = source_data, source_data
+
+    if isinstance(target_data, tuple):
+        t_id, t_name = target_data
+    else:
+        t_id, t_name = target_data, target_data
+
+    if not s_id or not t_id or s_id in ['-', ''] or t_id in ['-', '']:
         return
 
     valid_labels = ["User", "Computer", "Process", "Registry", "Task", "Service", "File"]
@@ -21,13 +28,15 @@ def _insert_graph_relationship(tx, case_id, source_label, source_name, target_la
 
     query = f"""
     MERGE (c:Case {{case_id: $case_id}})
-    MERGE (source:{source_label} {{name: $source_name, case_id: $case_id}})
-    MERGE (target:{target_label} {{name: $target_name, case_id: $case_id}})
+    MERGE (source:{source_label} {{entity_id: $s_id, case_id: $case_id}})
+    ON CREATE SET source.name = $s_name
+    MERGE (target:{target_label} {{entity_id: $t_id, case_id: $case_id}})
+    ON CREATE SET target.name = $t_name
     MERGE (source)-[r:{rel_type}]->(target)
     SET r += $details
     """
     try:
-        tx.run(query, case_id=case_id, source_name=source_name, target_name=target_name, details=details)
+        tx.run(query, case_id=case_id, s_id=s_id, s_name=s_name, t_id=t_id, t_name=t_name, details=details)
     except Exception as e:
         logger.error(f"Failed to insert relationship '{rel_type}': {e}")
 
@@ -46,16 +55,19 @@ def _resolve_user(data_map, name_key, sid_key, sid_map):
 
 
 def _resolve_process(data_map, name_key, id_key, proc_map):
-    """Resolves a generic process name using the Process ID map if the name is missing."""
-    name = data_map.get(name_key, "")
-    if name and name != '-': 
-        return name.split('\\')[-1]
-    
     pid = data_map.get(id_key, "")
-    if pid in proc_map: 
-        return proc_map[pid]
+    name = data_map.get(name_key, "")
+    
+    if name and name != '-': 
+        clean_name = name.split('\\')[-1]
+    elif pid in proc_map: 
+        clean_name = proc_map[pid]
+    else:
+        clean_name = "Unknown_Process"
         
-    return pid if pid and pid != '-' else "Unknown_Process"
+    pid_val = pid if pid and pid != '-' else clean_name
+    
+    return (pid_val, clean_name)
 
 
 def _process_event_logic(tx, case_id, log, sid_map, proc_map):
@@ -137,7 +149,38 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
     elif event_id == '1102':
         user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
         _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "AUDIT_LOG_CLEARED", details)
+    
+    elif event_id == '4769':
+        user = _resolve_user(data_map, 'TargetUserName', 'TargetUserSid', sid_map)
+        service_name = data_map.get('ServiceName', 'Unknown_Service')
+        ip_address = data_map.get('IpAddress', '')
+        
+        # Clean domain suffix from username if present for better readability
+        if '@' in user:
+            user = user.split('@')[0]
+            
+        _insert_graph_relationship(tx, case_id, "User", user, "Computer", service_name, "TICKET_REQUESTED", details)
+        
+        # Map source IP if it's a remote request
+        if ip_address and ip_address not in ['-', '127.0.0.1', '::1']:
+            _insert_graph_relationship(tx, case_id, "Computer", ip_address, "User", user, "USED_IP_FOR_TICKET", details)
 
+    elif event_id == '4726':
+        src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
+        dst_user = _resolve_user(data_map, 'TargetUserName', 'TargetSid', sid_map)
+        
+        _insert_graph_relationship(tx, case_id, "User", src_user, "User", dst_user, "USER_DELETED", details)
+    elif event_id == '5140':
+        user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
+        share_name = data_map.get('ShareName', 'Unknown_Share')
+        ip_address = data_map.get('IpAddress', '')
+        
+        
+        _insert_graph_relationship(tx, case_id, "User", user, "File", share_name, "ACCESSED_SHARE", details)
+        
+        
+        if ip_address and ip_address not in ['-', '127.0.0.1', '::1']:
+             _insert_graph_relationship(tx, case_id, "Computer", ip_address, "File", share_name, "REMOTE_SHARE_ACCESS", details)
 
 def parse_and_store_evtx(filepath, case_id, case_name, db_client):
     """
@@ -178,7 +221,7 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
                         for child in user_data[0]:
                             clean_tag = child.tag.split('}')[-1]
                             data_map[clean_tag] = child.text or ""
-                            
+
                 # Build SID mapping for user resolution
                 for sid_key, name_key in [('SubjectUserSid', 'SubjectUserName'), ('TargetUserSid', 'TargetUserName'), ('TargetSid', 'TargetUserName')]:
                     sid = data_map.get(sid_key)
