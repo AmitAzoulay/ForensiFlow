@@ -75,24 +75,41 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
 
     const angle = Math.atan2(end.y - cp.y, end.x - cp.x);
 
-    // --- חישוב רדיוס דינמי לפי הזום ---
-    // אם אנחנו בזום-אין (Scale גבוה), נגדיל את המרווח כדי לפנות מקום לטקסט
-    // אם אנחנו בזום-אאוט, נקטין את המרווח שהחץ ייצמד לאייקון
-    const isZoomedIn = globalScale > 0.8;
-    const baseRadius = (end.label === 'User' || end.label === 'Computer') ? 20 : 15;
-    const dynamicOffset = isZoomedIn ? (baseRadius + 12 / globalScale) : baseRadius;
+    // --- חישוב רדיוס חכם לפי סוג האייקון ---
+    const isComputer = end.label === 'Computer';
+    const isUser = end.label === 'User';
     
+    // הגדרת רדיוס בסיס
+    let baseRadius = 14; 
+    if (isUser) baseRadius = 17;
+    if (isComputer) baseRadius = 15;
+
+    // תיקון זוויתי: אם החץ מגיע מלמעלה/למטה לאייקון מלבני (מחשב), נקטין את הרדיוס
+    // זה מונע את ה"חור" שראית בתמונה
+    const angleCos = Math.abs(Math.cos(angle));
+    const angleSin = Math.abs(Math.sin(angle));
+    const adjustedRadius = isComputer 
+        ? baseRadius * (angleCos + 0.7 * angleSin) 
+        : baseRadius;
+
+    // מרווח טקסט - מופיע רק אם הזום גבוה (Scale > 0.8)
+    const textGap = globalScale > 0.8 ? 24 : 0;
+    
+    const dynamicOffset = adjustedRadius + textGap;
     const arrowSize = Math.max(4, 8 / globalScale); 
 
+    // מיקום ראש החץ
     const arrowTipX = end.x - dynamicOffset * Math.cos(angle);
     const arrowTipY = end.y - dynamicOffset * Math.sin(angle);
 
     const lineStopX = arrowTipX - (arrowSize / 3) * Math.cos(angle);
     const lineStopY = arrowTipY - (arrowSize / 3) * Math.sin(angle);
 
+    // נקודת התחלה (Source)
+    const sourceRadius = (start.label === 'User' || start.label === 'Computer') ? 17 : 14;
     const startAngle = Math.atan2(cp.y - start.y, cp.x - start.x);
-    const sourceX = start.x + baseRadius * Math.cos(startAngle);
-    const sourceY = start.y + baseRadius * Math.sin(startAngle);
+    const sourceX = start.x + sourceRadius * Math.cos(startAngle);
+    const sourceY = start.y + sourceRadius * Math.sin(startAngle);
 
     // 1. ציור הקו
     ctx.beginPath();
@@ -106,32 +123,40 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
     ctx.beginPath();
     ctx.fillStyle = '#94a3b8';
     ctx.moveTo(arrowTipX, arrowTipY);
-    ctx.lineTo(arrowTipX - arrowSize * Math.cos(angle - Math.PI / 7), arrowTipY - arrowSize * Math.sin(angle - Math.PI / 7));
-    ctx.lineTo(arrowTipX - arrowSize * Math.cos(angle + Math.PI / 7), arrowTipY - arrowSize * Math.sin(angle + Math.PI / 7));
+    ctx.lineTo(
+        arrowTipX - arrowSize * Math.cos(angle - Math.PI / 7), 
+        arrowTipY - arrowSize * Math.sin(angle - Math.PI / 7)
+    );
+    ctx.lineTo(
+        arrowTipX - arrowSize * Math.cos(angle + Math.PI / 7), 
+        arrowTipY - arrowSize * Math.sin(angle + Math.PI / 7)
+    );
     ctx.closePath();
     ctx.fill();
 
-    // 3. טקסט על הקשר (PROCESS_CREATED וכו')
+    // 3. טקסט על הקשר (נשאר ללא שינוי)
     if (globalScale > 1.2) {
-        const label = link.type || link.label || "";
-        const textX = 0.25 * start.x + 0.5 * cp.x + 0.25 * end.x;
-        const textY = 0.25 * start.y + 0.5 * cp.y + 0.25 * end.y;
-        const tx = 0.5 * (cp.x - start.x) + 0.5 * (end.x - cp.x);
-        const ty = 0.5 * (cp.y - start.y) + 0.5 * (end.y - cp.y);
-        const textAngle = Math.atan2(ty, tx);
+        const labelText = (link.type || link.label || "").trim();
+        if (labelText.length > 0) {
+            const textX = 0.25 * start.x + 0.5 * cp.x + 0.25 * end.x;
+            const textY = 0.25 * start.y + 0.5 * cp.y + 0.25 * end.y;
+            const tx = 0.5 * (cp.x - start.x) + 0.5 * (end.x - cp.x);
+            const ty = 0.5 * (cp.y - start.y) + 0.5 * (end.y - cp.y);
+            const textAngle = Math.atan2(ty, tx);
 
-        ctx.save();
-        ctx.translate(textX, textY);
-        ctx.rotate(textAngle);
-        ctx.font = `${Math.max(7, 10 / globalScale)}px Inter, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.lineWidth = 3 / globalScale;
-        ctx.strokeText(label, 0, -2);
-        ctx.fillStyle = '#64748b';
-        ctx.fillText(label, 0, -2);
-        ctx.restore();
+            ctx.save();
+            ctx.translate(textX, textY);
+            ctx.rotate(textAngle);
+            ctx.font = `${Math.max(7, 10 / globalScale)}px Inter, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.lineWidth = 3 / globalScale;
+            ctx.strokeText(labelText, 0, -2);
+            ctx.fillStyle = '#64748b';
+            ctx.fillText(labelText, 0, -2);
+            ctx.restore();
+        }
     }
 };
 
