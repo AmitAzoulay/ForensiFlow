@@ -41,22 +41,20 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
     }
 
-    if (globalScale > 0.8) {
-        const fontSize = 13 / globalScale;
-        ctx.font = `500 ${fontSize}px Inter, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
+    const fontSize = 13 / globalScale;
+    ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
 
-        const x = node.x;
-        const y = node.y + iconSize / 2 + 5;
+    const x = node.x;
+    const y = node.y + iconSize / 2 + 5;
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.lineWidth = 4 / globalScale;
-        ctx.strokeText(label, x, y);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 4 / globalScale;
+    ctx.strokeText(label, x, y);
 
-        ctx.fillStyle = '#1e293b';
-        ctx.fillText(label, x, y);
-    }
+    ctx.fillStyle = '#1e293b';
+    ctx.fillText(label, x, y);
 };
 
 const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
@@ -66,6 +64,7 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
 
     const deltaX = end.x - start.x;
     const deltaY = end.y - start.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     const curveness = link.curvature || 0;
 
     const cp = {
@@ -73,27 +72,73 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
         y: start.y + deltaY / 2 - (deltaX * curveness)
     };
 
-    ctx.beginPath();
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 1 / globalScale;
-    ctx.moveTo(start.x, start.y);
-    ctx.quadraticCurveTo(cp.x, cp.y, end.x, end.y);
-    ctx.stroke();
+    if (distance > 20) {
+        const tEnd = Math.max(0.1, 1 - (22 / distance));
 
-    if (globalScale > 1.2) {
-        const label = link.type || link.label || "";
-        if (!label) return;
+        const splitCp = {
+            x: start.x + tEnd * (cp.x - start.x),
+            y: start.y + tEnd * (cp.y - start.y)
+        };
+
+        const splitEnd = {
+            x: Math.pow(1 - tEnd, 2) * start.x + 2 * (1 - tEnd) * tEnd * cp.x + Math.pow(tEnd, 2) * end.x,
+            y: Math.pow(1 - tEnd, 2) * start.y + 2 * (1 - tEnd) * tEnd * cp.y + Math.pow(tEnd, 2) * end.y
+        };
+
+        ctx.beginPath();
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = Math.max(1.2 / globalScale, 1);
+        ctx.moveTo(start.x, start.y);
+        ctx.quadraticCurveTo(splitCp.x, splitCp.y, splitEnd.x, splitEnd.y);
+        ctx.stroke();
+
+        const dx = 2 * (1 - tEnd) * (cp.x - start.x) + 2 * tEnd * (end.x - cp.x);
+        const dy = 2 * (1 - tEnd) * (cp.y - start.y) + 2 * tEnd * (end.y - cp.y);
+        const arrowAngle = Math.atan2(dy, dx);
+
+        ctx.save();
+        ctx.translate(splitEnd.x, splitEnd.y);
+        ctx.rotate(arrowAngle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-8, 5);
+        ctx.lineTo(-8, -5);
+        ctx.fillStyle = '#94a3b8';
+        ctx.fill();
+        ctx.restore();
+    } else {
+        ctx.beginPath();
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = Math.max(1.2 / globalScale, 1);
+        ctx.moveTo(start.x, start.y);
+        ctx.quadraticCurveTo(cp.x, cp.y, end.x, end.y);
+        ctx.stroke();
+    }
+
+    const label = link.type || link.label || "";
+    if (label) {
         const textX = 0.25 * start.x + 0.5 * cp.x + 0.25 * end.x;
         const textY = 0.25 * start.y + 0.5 * cp.y + 0.25 * end.y;
+
+        let textAngle = Math.atan2(end.y - start.y, end.x - start.x);
+        if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
+            textAngle += Math.PI;
+        }
+
         const fontSize = Math.min(10, 12 / globalScale);
-        ctx.font = `${fontSize}px Inter, sans-serif`;
+
+        ctx.save();
+        ctx.translate(textX, textY);
+        ctx.rotate(textAngle);
+        ctx.font = `600 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 3 / globalScale;
-        ctx.strokeText(label, textX, textY);
+        ctx.strokeText(label, 0, -4);
         ctx.fillStyle = '#64748b';
-        ctx.fillText(label, textX, textY);
+        ctx.fillText(label, 0, -4);
+        ctx.restore();
     }
 };
 
@@ -296,9 +341,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
 
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-1500);
-            graphRef.current.d3Force('link').distance(320);
-            graphRef.current.d3Force('collide', d3.forceCollide().radius(70));
+            graphRef.current.d3Force('charge').strength(-400);
+            graphRef.current.d3Force('link').distance(150);
+            graphRef.current.d3Force('collide', d3.forceCollide().radius(45));
             graphRef.current.d3Force('center').strength(0.05);
             graphRef.current.d3ReheatSimulation();
         }
@@ -458,14 +503,13 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                                 )}
                             </div>
 
-                            {/* ADVANCED FILTER */}
                             <div className="filter-chips-row" style={{ paddingTop: 0 }}>
                                 <span className="filter-label">Advanced Filter:</span>
                                 <input
                                     type="text"
                                     className="modern-input"
                                     style={{ flex: 1, margin: 0 }}
-                                    placeholder="(e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
+                                    placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
