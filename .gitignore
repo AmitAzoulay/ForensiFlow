@@ -1,4 +1,22 @@
+# Dependency folders
 node_modules/
 venv/
+.venv/
+env/
+
+# Security and Secrets
 .env
+
+# Project specific uploads
 uploads/
+
+# Python bytecode and caches (הקבצים שהופיעו לך מקודם)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# OS specific files
+.DS_Store
+Thumbs.db

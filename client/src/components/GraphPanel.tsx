@@ -2,19 +2,20 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
 import './GraphPanel.css';
+import * as d3 from 'd3-force';
 
 // ==========================================
 // CONSTANTS & HELPERS
 // ==========================================
-const GRAPH_SETTINGS = {
-    NODE_RADIUS: 16,
-    LINK_COLOR: '#94a3b8',
-    LINK_WIDTH: 2,
-    ARROW_LENGTH: 10,
-    ARROW_WIDTH: 5,
-    NODE_MARGIN: 14,
-    LABEL_FONT_SIZE: 4
-};
+// const GRAPH_SETTINGS = {
+//     NODE_RADIUS: 16,
+//     LINK_COLOR: '#94a3b8',
+//     LINK_WIDTH: 2,
+//     ARROW_LENGTH: 10,
+//     ARROW_WIDTH: 5,
+//     NODE_MARGIN: 14,
+//     LABEL_FONT_SIZE: 4
+// };
 
 const ICONS_SVG = {
     PROCESS: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2310b981"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>`,
@@ -22,111 +23,79 @@ const ICONS_SVG = {
     USER: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%233b82f6"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
     COMPUTER: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23475569"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>`,
     FILE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2306b6d4"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`,
-    TASK: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23f59e0b"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm4-4H7v-2h9v2zm0-4H7V7h9v2z"/></svg>`,
+    TASK: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23f59e0b"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3zM12 4c.3 0 .5.2.5.5s-.2.5-.5.5-.5-.2-.5-.5.2-.5.5-.5z"/></svg>`,
     SERVICE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%238b5cf6"><path d="M4 11h16v2H4zm0-4h16v2H4zm0 8h16v2H4zm-2-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H2c-1.1 0-2-.9-2-2V7zm2 10h16V7H4v10z"/></svg>`
 };
 
-const drawNodeOnCanvas = (node: any, ctx: CanvasRenderingContext2D, globalScale: number, nodeIcons: Record<string, HTMLImageElement>) => {
-    const label = node.properties?.name || node.name || node.id;
-    const iconSize = 26;
+const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any) => {
+    const rawLabel = node.properties?.name || node.name || node.id;
+    const label = (rawLabel.length > 20) 
+        ? rawLabel.substring(0, 12) + "..." 
+        : rawLabel;
+
+    const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
     const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
 
     if (iconImage) {
         ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
-    } else {
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI);
-        ctx.fillStyle = '#64748b';
-        ctx.fill();
     }
 
-    const fontSize = 11 / globalScale;
-    ctx.font = `500 ${fontSize}px Inter, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#1e293b';
+    if (globalScale > 0.8) {
+        const fontSize = 13 / globalScale; 
+        ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
 
-    const lines = label.split('\n');
-    lines.forEach((line: string, index: number) => {
-        ctx.fillText(line, node.x, node.y + iconSize / 2 + 4 + (index * fontSize));
-    });
+        const x = node.x;
+        const y = node.y + iconSize / 2 + 5;
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 4 / globalScale;
+        ctx.strokeText(label, x, y);
+
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(label, x, y);
+    }
 };
 
-const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D) => {
-    const startNode = link.source;
-    const endNode = link.target;
+const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
+    const start = link.source;
+    const end = link.target;
+    if (!start || !end || typeof start !== 'object' || typeof end !== 'object') return;
 
-    const deltaX = endNode.x - startNode.x;
-    const deltaY = endNode.y - startNode.y;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    const curveness = link.curvature || 0;
 
-    if (distance === 0) return;
-
-    const totalOffset = GRAPH_SETTINGS.NODE_RADIUS + GRAPH_SETTINGS.NODE_MARGIN;
-    const normalVector = { x: -deltaY / distance, y: deltaX / distance };
-    const controlPointOffset = (link.curvature || 0) * distance;
-    const controlPoint = {
-        x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
-        y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
+    const cp = {
+        x: start.x + deltaX / 2 + (deltaY * curveness),
+        y: start.y + deltaY / 2 - (deltaX * curveness)
     };
 
-    const distToControlEnd = Math.sqrt(Math.pow(endNode.x - controlPoint.x, 2) + Math.pow(endNode.y - controlPoint.y, 2));
-    const distToControlStart = Math.sqrt(Math.pow(startNode.x - controlPoint.x, 2) + Math.pow(startNode.y - controlPoint.y, 2));
-
-    if (distToControlEnd === 0 || distToControlStart === 0) return;
-
-    const targetTipX = endNode.x - ((endNode.x - controlPoint.x) / distToControlEnd) * totalOffset;
-    const targetTipY = endNode.y - ((endNode.y - controlPoint.y) / distToControlEnd) * totalOffset;
-    const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
-    const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
-
     ctx.beginPath();
-    ctx.strokeStyle = GRAPH_SETTINGS.LINK_COLOR;
-    ctx.lineWidth = GRAPH_SETTINGS.LINK_WIDTH;
-    ctx.moveTo(sourceTipX, sourceTipY);
-    ctx.quadraticCurveTo(
-        controlPoint.x,
-        controlPoint.y,
-        targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8),
-        targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8)
-    );
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1 / globalScale;
+    ctx.moveTo(start.x, start.y);
+    ctx.quadraticCurveTo(cp.x, cp.y, end.x, end.y);
     ctx.stroke();
 
-    const baseX = targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
-    const baseY = targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
-
-    ctx.beginPath();
-    ctx.fillStyle = GRAPH_SETTINGS.LINK_COLOR;
-    ctx.moveTo(targetTipX, targetTipY);
-    ctx.lineTo(baseX - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY + ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
-    ctx.lineTo(baseX + ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
-    ctx.closePath();
-    ctx.fill();
-
-    const label = link.type;
-    const textPos = {
-        x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
-        y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
-    };
-
-    ctx.font = `600 ${GRAPH_SETTINGS.LABEL_FONT_SIZE}px Inter, sans-serif`;
-    const textWidth = ctx.measureText(label).width;
-    const bgDimensions = [textWidth, GRAPH_SETTINGS.LABEL_FONT_SIZE].map(n => n + GRAPH_SETTINGS.LABEL_FONT_SIZE * 0.6);
-
-    ctx.save();
-    ctx.translate(textPos.x, textPos.y);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2, bgDimensions[0], bgDimensions[1]);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#475569';
-    ctx.fillText(label, 0, 0);
-    ctx.restore();
+    if (globalScale > 1.2) {
+        const label = link.type || link.label || "";
+        if (!label) return;
+        const textX = 0.25 * start.x + 0.5 * cp.x + 0.25 * end.x;
+        const textY = 0.25 * start.y + 0.5 * cp.y + 0.25 * end.y;
+        const fontSize = Math.min(10, 12 / globalScale);
+        ctx.font = `${fontSize}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 3 / globalScale;
+        ctx.strokeText(label, textX, textY);
+        ctx.fillStyle = '#64748b';
+        ctx.fillText(label, textX, textY);
+    }
 };
 
-// ==========================================
-// COMPONENT
-// ==========================================
 interface GraphPanelProps {
     graphData: { nodes: any[], links: any[] };
     onLinkClick: (link: any) => void;
@@ -143,12 +112,20 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const [newInvestigationName, setNewInvestigationName] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [activeFilters, setActiveFilters] = useState<string[]>([]);
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
 
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
 
-    // Initialize node icons
+    const toggleFilter = (category: string) => {
+        setActiveFilters(prev => 
+            prev.includes(category) 
+                ? prev.filter(c => c !== category) 
+                : [...prev, category]
+        );
+    };
+
     useEffect(() => {
         const loadSingleImage = (svgString: string) => {
             const img = new Image();
@@ -167,7 +144,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         });
     }, []);
 
-    // Load available investigations on mount
     useEffect(() => {
         const loadInvestigations = async () => {
             try {
@@ -183,7 +159,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         loadInvestigations();
     }, [selectedCaseId]);
 
-    // Handle container resizing
     useEffect(() => {
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
@@ -194,85 +169,64 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         return () => resizeObserver.disconnect();
     }, []);
 
-    // Advanced Boolean Filter logic
     const filteredGraphData = useMemo(() => {
-        if (!graphData || !graphData.links || searchQuery.trim() === '') return graphData;
+        if (!graphData || !graphData.nodes) return { nodes: [], links: [] };
 
-        // Helper to evaluate AND, OR, NOT logic
+        let keptNodes = graphData.nodes;
+        if (activeFilters.length > 0) {
+            keptNodes = keptNodes.filter(node => 
+                activeFilters.includes(node.label?.toLowerCase())
+            );
+        }
+
         const evaluateMatch = (text: string, query: string) => {
-            if (!query) return true;
-
-            // Split into OR groups first
+            if (!query.trim()) return true;
             const orTerms = query.toLowerCase().split(/\s+or\s+/);
-
             return orTerms.some(orTerm => {
-                // Split each OR group into AND requirements
                 const andTerms = orTerm.split(/\s+and\s+/);
-
                 return andTerms.every(andTerm => {
                     let term = andTerm.trim();
                     let isNot = false;
-
-                    // Check for NOT prefix
-                    if (term.startsWith('not ')) {
-                        isNot = true;
-                        term = term.substring(4).trim();
-                    } else if (term.startsWith('!')) {
-                        isNot = true;
-                        term = term.substring(1).trim();
-                    }
-
+                    if (term.startsWith('not ')) { isNot = true; term = term.substring(4).trim(); }
+                    else if (term.startsWith('!')) { isNot = true; term = term.substring(1).trim(); }
                     if (!term) return true;
-
                     const contains = text.includes(term);
                     return isNot ? !contains : contains;
                 });
             });
         };
 
-        // Filter the relationships (links) based on the combined event text
-        const keptLinks = graphData.links.filter(link => {
+        const finalLinks = graphData.links.filter(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
 
+            const isSourceVisible = keptNodes.some(n => n.id === sourceId);
+            const isTargetVisible = keptNodes.some(n => n.id === targetId);
+            if (!isSourceVisible || !isTargetVisible) return false;
+
+            if (searchQuery.trim() === '') return true;
+
             const sourceNode = graphData.nodes.find(n => n.id === sourceId);
             const targetNode = graphData.nodes.find(n => n.id === targetId);
-
-            const sourceName = sourceNode ? String(sourceNode.properties?.name || sourceNode.name || '') : '';
-            const targetName = targetNode ? String(targetNode.properties?.name || targetNode.name || '') : '';
-            const linkTypeStr = String(link.type || '');
-            const eventIdStr = String(link.details?.event_id || '');
-            const timestampStr = String(link.details?.timestamp || '');
-
-            // Combine all data so we can search the entire context of the event
-            const searchableText = `${sourceName} ${targetName} ${linkTypeStr} ${eventIdStr} ${timestampStr}`.toLowerCase();
-
+            const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
             return evaluateMatch(searchableText, searchQuery);
         });
 
-        // Collect the required nodes that survive the link filtering
-        const contextNodeIds = new Set();
-        keptLinks.forEach(link => {
-            contextNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
-            contextNodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
+        const finalNodeIds = new Set();
+        finalLinks.forEach(l => {
+            finalNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
+            finalNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
         });
 
-        // Edge case fallback: If a user explicitly searches for a node name that has no surviving links
-        graphData.nodes.forEach(n => {
-            const label = String(n.properties?.name || n.name || n.id || '').toLowerCase();
-            if (evaluateMatch(label, searchQuery)) {
-                contextNodeIds.add(n.id);
-            }
-        });
+        const finalNodes = searchQuery.trim() !== '' 
+            ? keptNodes.filter(n => finalNodeIds.has(n.id))
+            : keptNodes;
 
-        const keptNodes = graphData.nodes.filter(n => contextNodeIds.has(n.id));
-        return { nodes: keptNodes, links: keptLinks };
-    }, [graphData, searchQuery]);
+        return { nodes: finalNodes, links: finalLinks };
+    }, [graphData, searchQuery, activeFilters]);
 
-    // Apply curvature to duplicate links
     const graphDataWithCurvature = useMemo(() => {
         if (!filteredGraphData || !filteredGraphData.links) return filteredGraphData;
-
         const linksWithCurvature = [...filteredGraphData.links];
         const connectionCounter: Record<string, number> = {};
 
@@ -280,7 +234,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
-
             if (!connectionCounter[pairId]) connectionCounter[pairId] = 0;
             link.pairIndex = connectionCounter[pairId];
             connectionCounter[pairId]++;
@@ -291,7 +244,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
-
             const totalConnections = connectionCounter[pairId];
             const baseCurvatureStep = 0.15;
             const centralOffset = link.pairIndex - (totalConnections - 1) / 2;
@@ -301,11 +253,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         return { nodes: filteredGraphData.nodes, links: linksWithCurvature };
     }, [filteredGraphData]);
 
-    // Physics tuning
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-120);
-            graphRef.current.d3Force('link').distance(180);
+            graphRef.current.d3Force('charge').strength(-1500);
+            graphRef.current.d3Force('link').distance(320);
+            graphRef.current.d3Force('collide', d3.forceCollide().radius(70));
             graphRef.current.d3Force('center').strength(0.05);
             graphRef.current.d3ReheatSimulation();
         }
@@ -344,17 +296,13 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const handleDeleteInvestigation = async (e: React.MouseEvent, caseIdToDelete: string) => {
         if (!caseIdToDelete) return;
         if (!window.confirm("Are you sure you want to permanently delete this investigation?")) return;
-
         try {
             await apiService.deleteInvestigation(caseIdToDelete);
             setInvestigationsList(prev => prev.filter(inv => inv.case_id !== caseIdToDelete));
-
-            if (selectedCaseId === caseIdToDelete) {
-                setSelectedCaseId('');
-            }
+            if (selectedCaseId === caseIdToDelete) setSelectedCaseId('');
         } catch (error) {
             console.error("Failed to delete investigation:", error);
-            alert("Failed to delete the investigation. Please check the server logs.");
+            alert("Failed to delete the investigation.");
         }
     };
 
@@ -431,15 +379,49 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             </div>
 
             {graphData.nodes.length > 0 && (
-                <div className="search-bar-row">
-                    <input
-                        type="text"
-                        className="modern-input full-width"
-                        placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                </div>
+                <>
+                    <div className="filter-chips-row">
+                        <span className="filter-label">Quick Filter:</span>
+                        {[
+                            { id: 'user', label: 'Users' },
+                            { id: 'process', label: 'Processes' },
+                            { id: 'computer', label: 'Computers' },
+                            { id: 'file', label: 'Files' },
+                            { id: 'registry', label: 'Registry'},
+                            { id: 'service', label: 'Services' },
+                            { id: 'task', label: 'Scheduled Tasks'}
+                        ].map(cat => {
+                            const count = graphData.nodes.filter(n => n.label?.toLowerCase() === cat.id).length;
+                            if (count === 0) return null;
+                            return (
+                                <button
+                                    key={cat.id}
+                                    className={`chip ${activeFilters.includes(cat.id) ? 'active' : ''}`}
+                                    onClick={() => toggleFilter(cat.id)}
+                                    style={{ '--active-color': cat.color } as any}
+                                >
+                                    <span className="chip-count">{count}</span>
+                                    {cat.label}
+                                </button>
+                            );
+                        })}
+                        {activeFilters.length > 0 && (
+                            <button className="clear-filters" onClick={() => setActiveFilters([])}>
+                                Clear All
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="search-bar-row">
+                        <input
+                            type="text"
+                            className="modern-input full-width"
+                            placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                </>
             )}
 
             <div className="content-area">
@@ -454,26 +436,21 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                             cooldownTicks={100}
                             nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
                             linkCanvasObjectMode={() => 'replace'}
-                            linkCanvasObject={(link, ctx) => drawCurvedLinkOnCanvas(link, ctx)}
+                            linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
                             linkPointerAreaPaint={(link, color, ctx) => {
                                 const startNode = link.source as any;
                                 const endNode = link.target as any;
-
                                 if (!startNode || !endNode || startNode.x === undefined || endNode.x === undefined) return;
-
                                 const deltaX = endNode.x - startNode.x;
                                 const deltaY = endNode.y - startNode.y;
                                 const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
                                 if (distance === 0) return;
-
                                 const normalVector = { x: -deltaY / distance, y: deltaX / distance };
                                 const controlPointOffset = (link.curvature || 0) * distance;
                                 const controlPoint = {
                                     x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
                                     y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
                                 };
-
                                 ctx.beginPath();
                                 ctx.strokeStyle = color;
                                 ctx.lineWidth = 12;

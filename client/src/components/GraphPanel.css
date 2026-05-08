@@ -1,10 +1,13 @@
+/* --- קונטיינר ראשי --- */
 .graph-panel-container {
     display: flex;
     flex-direction: column;
     height: 100vh;
     width: 100vw;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+/* --- Toolbar עליון --- */
 .top-toolbar {
     width: 100%;
     box-sizing: border-box;
@@ -14,6 +17,7 @@
     padding: 12px 24px;
     background-color: #ffffff;
     border-bottom: 1px solid #e2e8f0;
+    z-index: 10;
 }
 
 .toolbar-left {
@@ -25,75 +29,81 @@
 .toolbar-title {
     margin: 0;
     font-size: 1.25rem;
-    font-weight: 600;
+    font-weight: 700;
     color: #0f172a;
+    letter-spacing: -0.02em;
 }
 
-.mode-toggle {
-    display: flex;
-    gap: 16px;
-}
-
-.mode-toggle label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.9rem;
-    color: #475569;
-    cursor: pointer;
-}
-
-.mode-toggle label.active {
-    font-weight: 600;
-    color: #0f172a;
-}
-
-.toolbar-controls {
+/* --- שורת הפילטרים המקצועית --- */
+.filter-chips-row {
     display: flex;
     align-items: center;
     gap: 12px;
+    padding: 10px 24px;
+    background-color: #ffffff;
+    border-bottom: 1px solid #f1f5f9;
     flex-wrap: wrap;
 }
 
-.modern-input,
-.modern-select {
-    padding: 8px 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    font-size: 0.9rem;
+.filter-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 4px;
+}
+
+/* --- עיצוב ה-Chip (הכפתור) --- */
+.chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    background-color: #fff;
+    color: #475569; /* הצבע של המחשבים שאהבת */
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
     outline: none;
+}
+
+.chip:hover {
+    border-color: #cbd5e1;
     background-color: #f8fafc;
 }
 
-.modern-input.full-width {
-    width: 100%;
-    max-width: 100%;
+/* --- מצב לחוץ (Active) - כהה ואחיד --- */
+.chip.active {
+    background-color: #475569; /* צבע Slate כהה ומקצועי */
+    border-color: #334155;
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
-.modern-file-input {
-    font-size: 0.9rem;
-}
-
-.btn-primary {
-    background-color: #0ea5e9;
-    color: white;
-    border: none;
-    padding: 8px 16px;
+/* --- המונה (המספר) --- */
+.chip-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #f1f5f9;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 6px;
     border-radius: 6px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.2s;
+    min-width: 18px;
 }
 
-.btn-primary:hover:not(:disabled) {
-    background-color: #0284c7;
+.chip.active .chip-count {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
 }
 
-.btn-primary:disabled {
-    background-color: #94a3b8;
-    cursor: not-allowed;
-}
-
+/* --- שורת חיפוש --- */
 .search-bar-row {
     padding: 12px 24px;
     background-color: #f8fafc;
@@ -102,6 +112,41 @@
     box-sizing: border-box;
 }
 
+.modern-input {
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    outline: none;
+    background-color: #ffffff;
+    transition: border-color 0.2s;
+}
+
+.modern-input:focus {
+    border-color: #475569;
+}
+
+.modern-input.full-width {
+    width: 100%;
+}
+
+/* --- כפתור ניקוי --- */
+.clear-filters {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 10px;
+    text-decoration: underline;
+}
+
+.clear-filters:hover {
+    color: #1e293b;
+}
+
+/* --- אזור הגרף --- */
 .content-area {
     display: flex;
     flex: 1;
@@ -111,40 +156,34 @@
 .canvas-wrapper {
     flex: 1;
     position: relative;
-    background-color: #f1f5f9;
+    background-color: #f8fafc; /* רקע בהיר ונעים לגרף */
 }
 
-.placeholder {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #64748b;
-    font-size: 1rem;
-    font-weight: 500;
-}
-
-.btn-danger-icon {
-    padding: 8px 12px;
-    background-color: #fee2e2;
-    color: #ef4444;
-    border: 1px solid #f87171;
+/* --- אלמנטים נוספים ב-Toolbar --- */
+.btn-primary {
+    background-color: #475569;
+    color: white;
+    border: none;
+    padding: 8px 16px;
     border-radius: 6px;
+    font-weight: 600;
     cursor: pointer;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: #334155;
+}
+
+.mode-toggle label {
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: #64748b;
+    cursor: pointer;
 }
 
-.btn-danger-icon:hover:not(:disabled) {
-    background-color: #fca5a5;
-    color: #b91c1c;
-}
-
-.btn-danger-icon:disabled {
-    background-color: #f1f5f9;
-    color: #94a3b8;
-    border-color: #cbd5e1;
-    cursor: not-allowed;
+.mode-toggle label.active {
+    font-weight: 600;
+    color: #1e293b;
 }
