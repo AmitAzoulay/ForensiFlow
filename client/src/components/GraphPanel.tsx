@@ -1,21 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
+import TimelineFilter from './TimeLineFilter';
 import './GraphPanel.css';
 import * as d3 from 'd3-force';
 
 // ==========================================
 // CONSTANTS & HELPERS
 // ==========================================
-// const GRAPH_SETTINGS = {
-//     NODE_RADIUS: 16,
-//     LINK_COLOR: '#94a3b8',
-//     LINK_WIDTH: 2,
-//     ARROW_LENGTH: 10,
-//     ARROW_WIDTH: 5,
-//     NODE_MARGIN: 14,
-//     LABEL_FONT_SIZE: 4
-// };
 
 const ICONS_SVG = {
     PROCESS: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2310b981"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>`,
@@ -27,10 +19,19 @@ const ICONS_SVG = {
     SERVICE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%238b5cf6"><path d="M4 11h16v2H4zm0-4h16v2H4zm0 8h16v2H4zm-2-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H2c-1.1 0-2-.9-2-2V7zm2 10h16V7H4v10z"/></svg>`
 };
 
+const extractTimestamp = (obj: any): number | null => {
+    if (!obj) return null;
+    if (obj.timestamp) return new Date(obj.timestamp).getTime();
+    if (obj.time) return new Date(obj.time).getTime();
+    if (obj.details?.timestamp) return new Date(obj.details.timestamp).getTime();
+    if (obj.details?.System?.TimeCreated?.SystemTime) return new Date(obj.details.System.TimeCreated.SystemTime).getTime();
+    return null;
+};
+
 const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any) => {
     const rawLabel = node.properties?.name || node.name || node.id;
-    const label = (rawLabel.length > 20) 
-        ? rawLabel.substring(0, 12) + "..." 
+    const label = (rawLabel.length > 20)
+        ? rawLabel.substring(0, 12) + "..."
         : rawLabel;
 
     const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
@@ -41,7 +42,7 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
     }
 
     if (globalScale > 0.8) {
-        const fontSize = 13 / globalScale; 
+        const fontSize = 13 / globalScale;
         ctx.font = `500 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -115,13 +116,17 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const [activeFilters, setActiveFilters] = useState<string[]>([]);
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
 
+    // Timeline States
+    const [globalTimeBounds, setGlobalTimeBounds] = useState<{ min: number; max: number } | null>(null);
+    const [timeRange, setTimeRange] = useState<{ start: number; end: number } | null>(null);
+
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
 
     const toggleFilter = (category: string) => {
-        setActiveFilters(prev => 
-            prev.includes(category) 
-                ? prev.filter(c => c !== category) 
+        setActiveFilters(prev =>
+            prev.includes(category)
+                ? prev.filter(c => c !== category)
                 : [...prev, category]
         );
     };
@@ -169,12 +174,40 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         return () => resizeObserver.disconnect();
     }, []);
 
+    // Calculate Global Time Bounds when graphData updates
+    useEffect(() => {
+        if (!graphData || !graphData.links || graphData.links.length === 0) {
+            setGlobalTimeBounds(null);
+            setTimeRange(null);
+            return;
+        }
+
+        let min = Infinity;
+        let max = -Infinity;
+
+        graphData.links.forEach((link: any) => {
+            const t = extractTimestamp(link);
+            if (t) {
+                if (t < min) min = t;
+                if (t > max) max = t;
+            }
+        });
+
+        if (min !== Infinity && max !== -Infinity && min !== max) {
+            setGlobalTimeBounds({ min, max });
+            setTimeRange({ start: min, end: max });
+        } else {
+            setGlobalTimeBounds(null);
+            setTimeRange(null);
+        }
+    }, [graphData]);
+
     const filteredGraphData = useMemo(() => {
         if (!graphData || !graphData.nodes) return { nodes: [], links: [] };
 
         let keptNodes = graphData.nodes;
         if (activeFilters.length > 0) {
-            keptNodes = keptNodes.filter(node => 
+            keptNodes = keptNodes.filter(node =>
                 activeFilters.includes(node.label?.toLowerCase())
             );
         }
@@ -204,6 +237,14 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             const isTargetVisible = keptNodes.some(n => n.id === targetId);
             if (!isSourceVisible || !isTargetVisible) return false;
 
+            // Apply Timeline Filter
+            if (timeRange) {
+                const t = extractTimestamp(link);
+                if (t && (t < timeRange.start || t > timeRange.end)) {
+                    return false;
+                }
+            }
+
             if (searchQuery.trim() === '') return true;
 
             const sourceNode = graphData.nodes.find(n => n.id === sourceId);
@@ -218,12 +259,16 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             finalNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
         });
 
-        const finalNodes = searchQuery.trim() !== '' 
+        const isTimeFiltered = timeRange && globalTimeBounds &&
+            (timeRange.start > globalTimeBounds.min || timeRange.end < globalTimeBounds.max);
+
+        // Filter out nodes that have no links left after search & timeline filtering
+        const finalNodes = (searchQuery.trim() !== '' || isTimeFiltered)
             ? keptNodes.filter(n => finalNodeIds.has(n.id))
             : keptNodes;
 
         return { nodes: finalNodes, links: finalLinks };
-    }, [graphData, searchQuery, activeFilters]);
+    }, [graphData, searchQuery, activeFilters, timeRange, globalTimeBounds]);
 
     const graphDataWithCurvature = useMemo(() => {
         if (!filteredGraphData || !filteredGraphData.links) return filteredGraphData;
@@ -387,9 +432,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                             { id: 'process', label: 'Processes' },
                             { id: 'computer', label: 'Computers' },
                             { id: 'file', label: 'Files' },
-                            { id: 'registry', label: 'Registry'},
+                            { id: 'registry', label: 'Registry' },
                             { id: 'service', label: 'Services' },
-                            { id: 'task', label: 'Scheduled Tasks'}
+                            { id: 'task', label: 'Scheduled Tasks' }
                         ].map(cat => {
                             const count = graphData.nodes.filter(n => n.label?.toLowerCase() === cat.id).length;
                             if (count === 0) return null;
@@ -421,6 +466,17 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
+
+                    {/* TIMELINE FILTER INTEGRATION */}
+                    {globalTimeBounds && timeRange && (
+                        <TimelineFilter
+                            minTime={globalTimeBounds.min}
+                            maxTime={globalTimeBounds.max}
+                            startTime={timeRange.start}
+                            endTime={timeRange.end}
+                            onChange={(start, end) => setTimeRange({ start, end })}
+                        />
+                    )}
                 </>
             )}
 
