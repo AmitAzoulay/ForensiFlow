@@ -29,9 +29,7 @@ const ICONS_SVG = {
 
 const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any) => {
     const rawLabel = node.properties?.name || node.name || node.id;
-    const label = (rawLabel.length > 20) 
-        ? rawLabel.substring(0, 12) + "..." 
-        : rawLabel;
+    const label = (rawLabel.length > 20) ? rawLabel.substring(0, 12) + "..." : rawLabel;
 
     const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
     const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
@@ -40,17 +38,20 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
     }
 
+    // ציור השם - מופיע רק בזום מסוים ומותאם בגודלו
     if (globalScale > 0.8) {
-        const fontSize = 13 / globalScale; 
+        // פונט שגדל עם הזום אבל נשאר בטווח הגיוני
+        const fontSize = Math.min(14, Math.max(10, 12 / globalScale)); 
         ctx.font = `500 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
 
         const x = node.x;
-        const y = node.y + iconSize / 2 + 5;
+        // מיקום גמיש מתחת לאייקון
+        const y = node.y + iconSize / 2 + 2; 
 
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.lineWidth = 4 / globalScale;
+        ctx.lineWidth = 3 / globalScale;
         ctx.strokeText(label, x, y);
 
         ctx.fillStyle = '#1e293b';
@@ -72,27 +73,65 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
         y: start.y + deltaY / 2 - (deltaX * curveness)
     };
 
+    const angle = Math.atan2(end.y - cp.y, end.x - cp.x);
+
+    // --- חישוב רדיוס דינמי לפי הזום ---
+    // אם אנחנו בזום-אין (Scale גבוה), נגדיל את המרווח כדי לפנות מקום לטקסט
+    // אם אנחנו בזום-אאוט, נקטין את המרווח שהחץ ייצמד לאייקון
+    const isZoomedIn = globalScale > 0.8;
+    const baseRadius = (end.label === 'User' || end.label === 'Computer') ? 20 : 15;
+    const dynamicOffset = isZoomedIn ? (baseRadius + 12 / globalScale) : baseRadius;
+    
+    const arrowSize = Math.max(4, 8 / globalScale); 
+
+    const arrowTipX = end.x - dynamicOffset * Math.cos(angle);
+    const arrowTipY = end.y - dynamicOffset * Math.sin(angle);
+
+    const lineStopX = arrowTipX - (arrowSize / 3) * Math.cos(angle);
+    const lineStopY = arrowTipY - (arrowSize / 3) * Math.sin(angle);
+
+    const startAngle = Math.atan2(cp.y - start.y, cp.x - start.x);
+    const sourceX = start.x + baseRadius * Math.cos(startAngle);
+    const sourceY = start.y + baseRadius * Math.sin(startAngle);
+
+    // 1. ציור הקו
     ctx.beginPath();
     ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 1 / globalScale;
-    ctx.moveTo(start.x, start.y);
-    ctx.quadraticCurveTo(cp.x, cp.y, end.x, end.y);
+    ctx.lineWidth = Math.max(0.5, 1.5 / globalScale);
+    ctx.moveTo(sourceX, sourceY);
+    ctx.quadraticCurveTo(cp.x, cp.y, lineStopX, lineStopY);
     ctx.stroke();
 
+    // 2. ציור ראש החץ
+    ctx.beginPath();
+    ctx.fillStyle = '#94a3b8';
+    ctx.moveTo(arrowTipX, arrowTipY);
+    ctx.lineTo(arrowTipX - arrowSize * Math.cos(angle - Math.PI / 7), arrowTipY - arrowSize * Math.sin(angle - Math.PI / 7));
+    ctx.lineTo(arrowTipX - arrowSize * Math.cos(angle + Math.PI / 7), arrowTipY - arrowSize * Math.sin(angle + Math.PI / 7));
+    ctx.closePath();
+    ctx.fill();
+
+    // 3. טקסט על הקשר (PROCESS_CREATED וכו')
     if (globalScale > 1.2) {
         const label = link.type || link.label || "";
-        if (!label) return;
         const textX = 0.25 * start.x + 0.5 * cp.x + 0.25 * end.x;
         const textY = 0.25 * start.y + 0.5 * cp.y + 0.25 * end.y;
-        const fontSize = Math.min(10, 12 / globalScale);
-        ctx.font = `${fontSize}px Inter, sans-serif`;
+        const tx = 0.5 * (cp.x - start.x) + 0.5 * (end.x - cp.x);
+        const ty = 0.5 * (cp.y - start.y) + 0.5 * (end.y - cp.y);
+        const textAngle = Math.atan2(ty, tx);
+
+        ctx.save();
+        ctx.translate(textX, textY);
+        ctx.rotate(textAngle);
+        ctx.font = `${Math.max(7, 10 / globalScale)}px Inter, sans-serif`;
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.textBaseline = 'bottom';
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 3 / globalScale;
-        ctx.strokeText(label, textX, textY);
+        ctx.strokeText(label, 0, -2);
         ctx.fillStyle = '#64748b';
-        ctx.fillText(label, textX, textY);
+        ctx.fillText(label, 0, -2);
+        ctx.restore();
     }
 };
 
@@ -255,7 +294,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
 
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-1500);
+            graphRef.current.d3Force('charge').strength(-2000);
             graphRef.current.d3Force('link').distance(320);
             graphRef.current.d3Force('collide', d3.forceCollide().radius(70));
             graphRef.current.d3Force('center').strength(0.05);
