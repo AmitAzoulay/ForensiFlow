@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
 import './GraphPanel.css';
+import * as d3 from 'd3-force';
 
 // ==========================================
 // CONSTANTS & HELPERS
@@ -26,102 +27,100 @@ const ICONS_SVG = {
     SERVICE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%238b5cf6"><path d="M4 11h16v2H4zm0-4h16v2H4zm0 8h16v2H4zm-2-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H2c-1.1 0-2-.9-2-2V7zm2 10h16V7H4v10z"/></svg>`
 };
 
-const drawNodeOnCanvas = (node: any, ctx: CanvasRenderingContext2D, globalScale: number, nodeIcons: Record<string, HTMLImageElement>) => {
-    const label = node.properties?.name || node.name || node.id;
-    const iconSize = 26;
+const drawNodeOnCanvas = (node, ctx, globalScale, nodeIcons) => {
+    const rawLabel = node.properties?.name || node.name || node.id;
+    
+    // 1. קיצור שמות חכם יותר - רק אם השם באמת חורג (מעל 20 תווים)
+    // כך Administrator (13 תווים) יישאר שלם לגמרי
+    const label = (rawLabel.length > 20) 
+        ? rawLabel.substring(0, 12) + "..." 
+        : rawLabel;
+
+    const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
     const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
 
     if (iconImage) {
         ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
-    } else {
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI);
-        ctx.fillStyle = '#64748b';
-        ctx.fill();
     }
 
-    const fontSize = 11 / globalScale;
-    ctx.font = `500 ${fontSize}px Inter, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#1e293b';
+    // 2. לוגיקת הופעת הטקסט האחידה
+    if (globalScale > 0.8) {
+        // פונט בגודל קבוע וקריא יותר
+        const fontSize = 13 / globalScale; 
+        
+        ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
 
-    const lines = label.split('\n');
-    lines.forEach((line: string, index: number) => {
-        ctx.fillText(line, node.x, node.y + iconSize / 2 + 4 + (index * fontSize));
-    });
+        const x = node.x;
+        const y = node.y + iconSize / 2 + 5;
+
+        // הילה לבנה
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 4 / globalScale;
+        ctx.strokeText(label, x, y);
+
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(label, x, y);
+    }
 };
 
-const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D) => {
-    const startNode = link.source;
-    const endNode = link.target;
+const drawCurvedLinkOnCanvas = (link, ctx, globalScale) => {
+    const start = link.source;
+    const end = link.target;
 
-    const deltaX = endNode.x - startNode.x;
-    const deltaY = endNode.y - startNode.y;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    // הגנה למקרה שהנתונים לא נטענו עדיין כראוי
+    if (!start || !end || typeof start !== 'object' || typeof end !== 'object') return;
 
-    if (distance === 0) return;
+    // 1. חישוב גיאומטריית הקו (וקטורים ומרחקים)
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    const dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const curveness = link.curvature || 0;
 
-    const totalOffset = GRAPH_SETTINGS.NODE_RADIUS + GRAPH_SETTINGS.NODE_MARGIN;
-    const normalVector = { x: -deltaY / distance, y: deltaX / distance };
-    const controlPointOffset = (link.curvature || 0) * distance;
-    const controlPoint = {
-        x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
-        y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
+    // 2. חישוב נקודת הבקרה (Control Point) של הקשת הפרבולית
+    // הנוסחה הזו מוודאת שהקשת מתעקלת הצידה יחסית לכיוון הקו
+    const cp = {
+        x: start.x + deltaX / 2 + (deltaY * curveness),
+        y: start.y + deltaY / 2 - (deltaX * curveness)
     };
 
-    const distToControlEnd = Math.sqrt(Math.pow(endNode.x - controlPoint.x, 2) + Math.pow(endNode.y - controlPoint.y, 2));
-    const distToControlStart = Math.sqrt(Math.pow(startNode.x - controlPoint.x, 2) + Math.pow(startNode.y - controlPoint.y, 2));
-
-    if (distToControlEnd === 0 || distToControlStart === 0) return;
-
-    const targetTipX = endNode.x - ((endNode.x - controlPoint.x) / distToControlEnd) * totalOffset;
-    const targetTipY = endNode.y - ((endNode.y - controlPoint.y) / distToControlEnd) * totalOffset;
-    const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
-    const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
-
+    // 3. ציור הקו עצמו
     ctx.beginPath();
-    ctx.strokeStyle = GRAPH_SETTINGS.LINK_COLOR;
-    ctx.lineWidth = GRAPH_SETTINGS.LINK_WIDTH;
-    ctx.moveTo(sourceTipX, sourceTipY);
-    ctx.quadraticCurveTo(
-        controlPoint.x,
-        controlPoint.y,
-        targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8),
-        targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8)
-    );
+    ctx.strokeStyle = '#94a3b8'; // צבע אפור-כחלחל מקצועי
+    ctx.lineWidth = 1 / globalScale; // עובי דק שמתאים את עצמו לזום
+    ctx.moveTo(start.x, start.y);
+    ctx.quadraticCurveTo(cp.x, cp.y, end.x, end.y);
     ctx.stroke();
 
-    const baseX = targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
-    const baseY = targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
+    // 4. ציור טקסט הפעולה (למשל PROCESS_CREATED או LOGGED_IN)
+    // מופיע רק בזום קרוב (מעל 1.2) כדי למנוע "רעש" כשהגרף רחוק
+    if (globalScale > 1.2) {
+        const label = link.type || link.label || "";
+        if (!label) return;
 
-    ctx.beginPath();
-    ctx.fillStyle = GRAPH_SETTINGS.LINK_COLOR;
-    ctx.moveTo(targetTipX, targetTipY);
-    ctx.lineTo(baseX - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY + ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
-    ctx.lineTo(baseX + ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
-    ctx.closePath();
-    ctx.fill();
+        // חישוב נקודת האמצע על העקומה (נקודת השיא של הפרבולה)
+        // נוסחת בזייה (Bezier) עבור t=0.5
+        const textX = 0.25 * start.x + 0.5 * cp.x + 0.25 * end.x;
+        const textY = 0.25 * start.y + 0.5 * cp.y + 0.25 * end.y;
 
-    const label = link.type;
-    const textPos = {
-        x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
-        y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
-    };
+        // קביעת גודל פונט דינמי
+        const fontSize = Math.min(10, 12 / globalScale);
+        ctx.font = `${fontSize}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
 
-    ctx.font = `600 ${GRAPH_SETTINGS.LABEL_FONT_SIZE}px Inter, sans-serif`;
-    const textWidth = ctx.measureText(label).width;
-    const bgDimensions = [textWidth, GRAPH_SETTINGS.LABEL_FONT_SIZE].map(n => n + GRAPH_SETTINGS.LABEL_FONT_SIZE * 0.6);
+        // הילה לבנה (Stroke) מסביב לטקסט
+        // זה מה שגורם למילים "לצוף" מעל הקו ולא להתערבב איתו
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 3 / globalScale;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(label, textX, textY);
 
-    ctx.save();
-    ctx.translate(textPos.x, textPos.y);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2, bgDimensions[0], bgDimensions[1]);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#475569';
-    ctx.fillText(label, 0, 0);
-    ctx.restore();
+        // מילוי הטקסט בצבע אפור כהה
+        ctx.fillStyle = '#64748b';
+        ctx.fillText(label, textX, textY);
+    }
 };
 
 // ==========================================
@@ -302,14 +301,24 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     }, [filteredGraphData]);
 
     // Physics tuning
-    useEffect(() => {
-        if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-120);
-            graphRef.current.d3Force('link').distance(180);
-            graphRef.current.d3Force('center').strength(0.05);
-            graphRef.current.d3ReheatSimulation();
-        }
-    }, [graphDataWithCurvature]);
+    
+useEffect(() => {
+    if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
+        // דחייה חזקה יותר כדי להפריד את ה"איים" ולמנוע קווים מתנגשים
+        graphRef.current.d3Force('charge').strength(-2000);
+
+        // הגדלת המרחק בין הצמתים - זה עוזר לקוים לקבל יותר מקום ולא לעבור זה על זה
+        graphRef.current.d3Force('link').distance(320);
+
+        // שימוש ב-d3-force להתנגשות (Collision) עם רדיוס גדול יותר לצמתים
+        graphRef.current.d3Force('collide', d3.forceCollide().radius(70));
+
+        // כוח מרכוז עדין ששומר על הכל בתוך הפריים
+        graphRef.current.d3Force('center').strength(0.05);
+
+        graphRef.current.d3ReheatSimulation();
+    }
+}, [graphDataWithCurvature]);
 
     const fetchExistingInvestigation = async () => {
         if (!selectedCaseId) return;
@@ -454,7 +463,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                             cooldownTicks={100}
                             nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
                             linkCanvasObjectMode={() => 'replace'}
-                            linkCanvasObject={(link, ctx) => drawCurvedLinkOnCanvas(link, ctx)}
+                            linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
                             linkPointerAreaPaint={(link, color, ctx) => {
                                 const startNode = link.source as any;
                                 const endNode = link.target as any;
