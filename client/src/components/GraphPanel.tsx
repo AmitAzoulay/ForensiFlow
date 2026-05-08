@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
 import './GraphPanel.css';
+import TimelineFilter from './TimelineFilter';
 
 // ==========================================
 // CONSTANTS & HELPERS
@@ -145,10 +146,12 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const [searchQuery, setSearchQuery] = useState('');
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
 
+    const [globalTimeBounds, setGlobalTimeBounds] = useState<{ min: number, max: number } | null>(null);
+    const [timeRange, setTimeRange] = useState<{ start: number, end: number } | null>(null);
+
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
 
-    // Initialize node icons
     useEffect(() => {
         const loadSingleImage = (svgString: string) => {
             const img = new Image();
@@ -167,7 +170,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         });
     }, []);
 
-    // Load available investigations on mount
     useEffect(() => {
         const loadInvestigations = async () => {
             try {
@@ -177,13 +179,12 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                     setSelectedCaseId(data[0].case_id);
                 }
             } catch (error) {
-                console.error("Failed to load investigation history:", error);
+                console.error("Failed to load investigations:", error);
             }
         };
         loadInvestigations();
     }, [selectedCaseId]);
 
-    // Handle container resizing
     useEffect(() => {
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
@@ -194,35 +195,88 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         return () => resizeObserver.disconnect();
     }, []);
 
-    // Filter logic
-    const filteredGraphData = useMemo(() => {
-        if (!graphData || !graphData.links || searchQuery.trim() === '') return graphData;
+    useEffect(() => {
+        if (!graphData || !graphData.links || graphData.links.length === 0) {
+            setGlobalTimeBounds(null);
+            setTimeRange(null);
+            return;
+        }
 
-        const lowerCaseQuery = searchQuery.toLowerCase();
-        const matchedNodeIds = new Set(
-            graphData.nodes
-                .filter(n => {
-                    const label = n.properties?.name || n.name || n.id;
-                    return label.toLowerCase().includes(lowerCaseQuery);
-                })
-                .map(n => n.id)
-        );
+        let min = Infinity;
+        let max = -Infinity;
+
+        graphData.links.forEach(link => {
+            const timestamp = link.details?.timestamp;
+            if (timestamp && timestamp !== '-' && timestamp !== 'N/A') {
+                const ts = new Date(timestamp).getTime();
+                if (!isNaN(ts)) {
+                    if (ts < min) min = ts;
+                    if (ts > max) max = ts;
+                }
+            }
+        });
+
+        if (min !== Infinity && max !== -Infinity) {
+            setGlobalTimeBounds({ min, max });
+            setTimeRange({ start: min, end: max });
+        }
+    }, [graphData]);
+
+    const filteredGraphData = useMemo(() => {
+        if (!graphData || !graphData.links) return graphData;
+
+        const evaluateMatch = (text: string, query: string) => {
+            if (!query) return true;
+            const orTerms = query.toLowerCase().split(/\s+or\s+/);
+
+            return orTerms.some(orTerm => {
+                const andTerms = orTerm.split(/\s+and\s+/);
+                return andTerms.every(andTerm => {
+                    let term = andTerm.trim();
+                    let isNot = false;
+
+                    if (term.startsWith('not ')) {
+                        isNot = true;
+                        term = term.substring(4).trim();
+                    } else if (term.startsWith('!')) {
+                        isNot = true;
+                        term = term.substring(1).trim();
+                    }
+
+                    if (!term) return true;
+                    return isNot ? !text.includes(term) : text.includes(term);
+                });
+            });
+        };
 
         const keptLinks = graphData.links.filter(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            if (matchedNodeIds.has(sourceId) || matchedNodeIds.has(targetId)) return true;
+            const sourceNode = graphData.nodes.find(n => n.id === sourceId);
+            const targetNode = graphData.nodes.find(n => n.id === targetId);
 
-            const linkTypeStr = String(link.type || '').toLowerCase();
-            const eventIdStr = String(link.details?.event_id || '').toLowerCase();
-            const timestampStr = String(link.details?.timestamp || '').toLowerCase();
+            const sourceName = sourceNode ? String(sourceNode.properties?.name || sourceNode.name || '') : '';
+            const targetName = targetNode ? String(targetNode.properties?.name || targetNode.name || '') : '';
+            const linkTypeStr = String(link.type || '');
+            const eventIdStr = String(link.details?.event_id || '');
+            const timestampStr = String(link.details?.timestamp || '');
 
-            return linkTypeStr.includes(lowerCaseQuery) ||
-                eventIdStr.includes(lowerCaseQuery) ||
-                timestampStr.includes(lowerCaseQuery);
+            const searchableText = `${sourceName} ${targetName} ${linkTypeStr} ${eventIdStr} ${timestampStr}`.toLowerCase();
+            const passesSearch = evaluateMatch(searchableText, searchQuery);
+
+            let passesTime = true;
+            if (timeRange && timestampStr && timestampStr !== '-' && timestampStr !== 'N/A') {
+                const ts = new Date(timestampStr).getTime();
+                if (!isNaN(ts)) {
+                    passesTime = ts >= timeRange.start && ts <= timeRange.end;
+                }
+            }
+
+            return passesSearch && passesTime;
         });
 
-        const contextNodeIds = new Set(matchedNodeIds);
+        const contextNodeIds = new Set();
+
         keptLinks.forEach(link => {
             contextNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
             contextNodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
@@ -230,9 +284,8 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
 
         const keptNodes = graphData.nodes.filter(n => contextNodeIds.has(n.id));
         return { nodes: keptNodes, links: keptLinks };
-    }, [graphData, searchQuery]);
+    }, [graphData, searchQuery, timeRange]);
 
-    // Apply curvature to duplicate links
     const graphDataWithCurvature = useMemo(() => {
         if (!filteredGraphData || !filteredGraphData.links) return filteredGraphData;
 
@@ -243,7 +296,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
-
             if (!connectionCounter[pairId]) connectionCounter[pairId] = 0;
             link.pairIndex = connectionCounter[pairId];
             connectionCounter[pairId]++;
@@ -254,22 +306,19 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
-
             const totalConnections = connectionCounter[pairId];
-            const baseCurvatureStep = 0.15;
             const centralOffset = link.pairIndex - (totalConnections - 1) / 2;
-            link.curvature = centralOffset * baseCurvatureStep * (link.isReversed ? -1 : 1);
+            link.curvature = centralOffset * 0.15 * (link.isReversed ? -1 : 1);
         });
 
         return { nodes: filteredGraphData.nodes, links: linksWithCurvature };
     }, [filteredGraphData]);
 
-    // Physics tuning
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-120);
-            graphRef.current.d3Force('link').distance(180);
-            graphRef.current.d3Force('center').strength(0.05);
+            graphRef.current.d3Force('charge').strength(-600);
+            graphRef.current.d3Force('link').distance(250);
+            graphRef.current.d3Force('center').strength(0.01);
             graphRef.current.d3ReheatSimulation();
         }
     }, [graphDataWithCurvature]);
@@ -304,6 +353,17 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         }
     };
 
+    const handleDeleteInvestigation = async (e: React.MouseEvent, caseIdToDelete: string) => {
+        if (!caseIdToDelete || !window.confirm("Delete permanently?")) return;
+        try {
+            await apiService.deleteInvestigation(caseIdToDelete);
+            setInvestigationsList(prev => prev.filter(inv => inv.case_id !== caseIdToDelete));
+            if (selectedCaseId === caseIdToDelete) setSelectedCaseId('');
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
     return (
         <div className="graph-panel-container">
             <div className="top-toolbar">
@@ -311,50 +371,31 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                     <h2 className="toolbar-title">ForensiFlow</h2>
                     <div className="mode-toggle">
                         <label className={mode === 'new' ? 'active' : ''}>
-                            <input type="radio" checked={mode === 'new'} onChange={() => setMode('new')} />
-                            New Investigation
+                            <input type="radio" checked={mode === 'new'} onChange={() => setMode('new')} /> New Investigation
                         </label>
                         <label className={mode === 'existing' ? 'active' : ''}>
-                            <input type="radio" checked={mode === 'existing'} onChange={() => setMode('existing')} />
-                            Open Existing
+                            <input type="radio" checked={mode === 'existing'} onChange={() => setMode('existing')} /> Open Existing
                         </label>
                     </div>
                 </div>
-
                 <div className="toolbar-controls">
                     {mode === 'new' ? (
                         <>
-                            <input
-                                type="text"
-                                className="modern-input"
-                                placeholder="Investigation Name"
-                                value={newInvestigationName}
-                                onChange={(e) => setNewInvestigationName(e.target.value)}
-                            />
-                            <input
-                                type="file"
-                                className="modern-file-input"
-                                accept=".evtx"
-                                onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])}
-                            />
+                            <input type="text" className="modern-input" placeholder="Investigation Name" value={newInvestigationName} onChange={(e) => setNewInvestigationName(e.target.value)} />
+                            <input type="file" className="modern-file-input" accept=".evtx" onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])} />
                             <button className="btn-primary" onClick={processNewInvestigation} disabled={!selectedFile || status === 'uploading'}>
                                 {status === 'uploading' ? 'Analyzing...' : 'Analyze'}
                             </button>
                         </>
                     ) : (
                         <>
-                            <select
-                                className="modern-select"
-                                value={selectedCaseId}
-                                onChange={(e) => setSelectedCaseId(e.target.value)}
-                            >
-                                <option value="" disabled>Select an Investigation...</option>
-                                {investigationsList.map(inv => (
-                                    <option key={inv.case_id} value={inv.case_id}>
-                                        {inv.name} ({inv.case_id.substring(0, 8)})
-                                    </option>
-                                ))}
+                            <select className="modern-select" value={selectedCaseId} onChange={(e) => setSelectedCaseId(e.target.value)}>
+                                <option value="" disabled>Select...</option>
+                                {investigationsList.map(inv => <option key={inv.case_id} value={inv.case_id}>{inv.name} ({inv.case_id.substring(0, 8)})</option>)}
                             </select>
+                            <button className="btn-danger-icon" onClick={(e) => handleDeleteInvestigation(e, selectedCaseId)} disabled={!selectedCaseId || status === 'uploading'} title="Delete">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
                             <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading'}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
@@ -363,69 +404,28 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                 </div>
             </div>
 
-            {graphData.nodes.length > 0 && (
-                <div className="search-bar-row">
-                    <input
-                        type="text"
-                        className="modern-input full-width"
-                        placeholder="Filter graph by process name, event ID, action type, or time..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                </div>
-            )}
-
             <div className="content-area">
-                <div className="canvas-wrapper" ref={containerRef}>
-                    {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
-                        <ForceGraph2D
-                            ref={graphRef}
-                            width={dimensions.width}
-                            height={dimensions.height}
-                            graphData={graphDataWithCurvature}
-                            onLinkClick={onLinkClick}
-                            cooldownTicks={100}
-                            nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
-                            linkCanvasObjectMode={() => 'replace'}
-                            linkCanvasObject={(link, ctx) => drawCurvedLinkOnCanvas(link, ctx)}
-                            linkPointerAreaPaint={(link, color, ctx) => {
-                                const startNode = link.source as any;
-                                const endNode = link.target as any;
-
-                                if (!startNode || !endNode || startNode.x === undefined || endNode.x === undefined) return;
-
-                                const deltaX = endNode.x - startNode.x;
-                                const deltaY = endNode.y - startNode.y;
-                                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-                                if (distance === 0) return;
-
-                                const normalVector = { x: -deltaY / distance, y: deltaX / distance };
-                                const controlPointOffset = (link.curvature || 0) * distance;
-                                const controlPoint = {
-                                    x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
-                                    y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
-                                };
-
-                                ctx.beginPath();
-                                ctx.strokeStyle = color;
-                                ctx.lineWidth = 12;
-                                ctx.moveTo(startNode.x, startNode.y);
-                                ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, endNode.x, endNode.y);
-                                ctx.stroke();
-                            }}
-                            nodePointerAreaPaint={(node, color, ctx) => {
-                                ctx.fillStyle = color;
-                                ctx.beginPath();
-                                ctx.arc(node.x, node.y, 13 + 4, 0, 2 * Math.PI);
-                                ctx.fill();
-                            }}
-                        />
-                    ) : (
-                        <div className="placeholder">
-                            {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
-                        </div>
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                    {graphData.nodes.length > 0 && (
+                        <>
+                            <div className="search-bar-row">
+                                <input type="text" className="modern-input full-width" placeholder="Filter graph... (e.g., 'svchost OR 4688')" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                            </div>
+                            {globalTimeBounds && timeRange && (
+                                <TimelineFilter minTime={globalTimeBounds.min} maxTime={globalTimeBounds.max} startTime={timeRange.start} endTime={timeRange.end} onChange={(s, e) => setTimeRange({ start: s, end: e })} />
+                            )}
+                        </>
                     )}
+                    <div className="canvas-wrapper" ref={containerRef}>
+                        {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
+                            <ForceGraph2D
+                                ref={graphRef} width={dimensions.width} height={dimensions.height} graphData={graphDataWithCurvature} onLinkClick={onLinkClick} cooldownTicks={100}
+                                nodeCanvasObject={(node, ctx, scale) => drawNodeOnCanvas(node, ctx, scale, nodeIcons)}
+                                linkCanvasObjectMode={() => 'replace'} linkCanvasObject={(link, ctx) => drawCurvedLinkOnCanvas(link, ctx)}
+                                nodePointerAreaPaint={(node, color, ctx) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(node.x, node.y, 17, 0, 2 * Math.PI); ctx.fill(); }}
+                            />
+                        ) : <div className="placeholder">{status === 'uploading' ? 'Processing...' : 'Ready to begin.'}</div>}
+                    </div>
                 </div>
                 {children}
             </div>
