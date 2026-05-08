@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
+import TimelineFilter from './TimelineFilter';
 import './GraphPanel.css';
 import * as d3 from 'd3-force';
 
@@ -27,8 +28,20 @@ const ICONS_SVG = {
     SERVICE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%238b5cf6"><path d="M4 11h16v2H4zm0-4h16v2H4zm0 8h16v2H4zm-2-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H2c-1.1 0-2-.9-2-2V7zm2 10h16V7H4v10z"/></svg>`
 };
 
+const extractTimestamp = (obj: any): number | null => {
+    if (!obj) return null;
+    if (obj.timestamp) return new Date(obj.timestamp).getTime();
+    if (obj.time) return new Date(obj.time).getTime();
+    if (obj.details?.timestamp) return new Date(obj.details.timestamp).getTime();
+    if (obj.details?.System?.TimeCreated?.SystemTime) return new Date(obj.details.System.TimeCreated.SystemTime).getTime();
+    return null;
+};
+
 const drawNodeOnCanvas = (node: any, ctx: CanvasRenderingContext2D, globalScale: number, nodeIcons: Record<string, HTMLImageElement>) => {
-    const label = node.properties?.name || node.name || node.id;
+    const rawLabel = String(node.properties?.name || node.name || node.id || '');
+    // Truncate long node names with ellipses
+    const label = rawLabel.length > 20 ? rawLabel.substring(0, 17) + "..." : rawLabel;
+
     const iconSize = 26;
     const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
 
@@ -41,16 +54,19 @@ const drawNodeOnCanvas = (node: any, ctx: CanvasRenderingContext2D, globalScale:
         ctx.fill();
     }
 
-    const fontSize = 11 / globalScale;
-    ctx.font = `500 ${fontSize}px Inter, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#1e293b';
+    // Hide labels when zoomed out too far
+    if (globalScale >= 0.8) {
+        const fontSize = 11 / globalScale;
+        ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#1e293b';
 
-    const lines = label.split('\n');
-    lines.forEach((line: string, index: number) => {
-        ctx.fillText(line, node.x, node.y + iconSize / 2 + 4 + (index * fontSize));
-    });
+        const lines = label.split('\n');
+        lines.forEach((line: string, index: number) => {
+            ctx.fillText(line, node.x, node.y + iconSize / 2 + 4 + (index * fontSize));
+        });
+    }
 };
 
 const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -105,38 +121,41 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     ctx.closePath();
     ctx.fill();
 
-    const label = link.type || link.label || "";
-    if (!label) return;
+    // Hide labels when zoomed out too far
+    if (globalScale >= 0.8) {
+        const label = link.type || link.label || "";
+        if (!label) return;
 
-    const textPos = {
-        x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
-        y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
-    };
+        const textPos = {
+            x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
+            y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
+        };
 
-    let textAngle = Math.atan2(endNode.y - startNode.y, endNode.x - startNode.x);
-    if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
-        textAngle += Math.PI;
+        let textAngle = Math.atan2(endNode.y - startNode.y, endNode.x - startNode.x);
+        if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
+            textAngle += Math.PI;
+        }
+
+        const baseFontSize = GRAPH_SETTINGS.LABEL_FONT_SIZE > 5 ? GRAPH_SETTINGS.LABEL_FONT_SIZE : 10;
+        const fontSize = Math.max(baseFontSize / globalScale, 2);
+
+        ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+        const textWidth = ctx.measureText(label).width;
+        const bgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.6);
+
+        ctx.save();
+        ctx.translate(textPos.x, textPos.y);
+        ctx.rotate(textAngle);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2 - (fontSize * 0.4), bgDimensions[0], bgDimensions[1]);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#475569';
+        ctx.fillText(label, 0, -(fontSize * 0.4));
+        ctx.restore();
     }
-
-    const baseFontSize = GRAPH_SETTINGS.LABEL_FONT_SIZE > 5 ? GRAPH_SETTINGS.LABEL_FONT_SIZE : 10;
-    const fontSize = Math.max(baseFontSize / globalScale, 2);
-
-    ctx.font = `600 ${fontSize}px Inter, sans-serif`;
-    const textWidth = ctx.measureText(label).width;
-    const bgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.6);
-
-    ctx.save();
-    ctx.translate(textPos.x, textPos.y);
-    ctx.rotate(textAngle);
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2 - (fontSize * 0.4), bgDimensions[0], bgDimensions[1]);
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#475569';
-    ctx.fillText(label, 0, -(fontSize * 0.4));
-    ctx.restore();
 };
 
 interface GraphPanelProps {
