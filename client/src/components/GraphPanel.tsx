@@ -225,6 +225,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const filteredGraphData = useMemo(() => {
         if (!graphData || !graphData.links) return graphData;
 
+        // Advanced Boolean filter
         const evaluateMatch = (text: string, query: string) => {
             if (!query) return true;
             const orTerms = query.toLowerCase().split(/\s+or\s+/);
@@ -249,21 +250,20 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             });
         };
 
+        // Integration of partner's node-matching feature
+        const matchedNodeIds = new Set();
+        if (searchQuery.trim() !== '') {
+            graphData.nodes.forEach(n => {
+                const label = String(n.properties?.name || n.name || n.id || '').toLowerCase();
+                if (evaluateMatch(label, searchQuery)) {
+                    matchedNodeIds.add(n.id);
+                }
+            });
+        }
+
         const keptLinks = graphData.links.filter(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            const sourceNode = graphData.nodes.find(n => n.id === sourceId);
-            const targetNode = graphData.nodes.find(n => n.id === targetId);
-
-            const sourceName = sourceNode ? String(sourceNode.properties?.name || sourceNode.name || '') : '';
-            const targetName = targetNode ? String(targetNode.properties?.name || targetNode.name || '') : '';
-            const linkTypeStr = String(link.type || '');
-            const eventIdStr = String(link.details?.event_id || '');
+            // Apply Time Filter
             const timestampStr = String(link.details?.timestamp || '');
-
-            const searchableText = `${sourceName} ${targetName} ${linkTypeStr} ${eventIdStr} ${timestampStr}`.toLowerCase();
-            const passesSearch = evaluateMatch(searchableText, searchQuery);
-
             let passesTime = true;
             if (timeRange && timestampStr && timestampStr !== '-' && timestampStr !== 'N/A') {
                 const ts = new Date(timestampStr).getTime();
@@ -271,12 +271,33 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                     passesTime = ts >= timeRange.start && ts <= timeRange.end;
                 }
             }
+            if (!passesTime) return false;
 
-            return passesSearch && passesTime;
+            // Apply Text Filter
+            if (!searchQuery.trim()) return true;
+
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+
+            // If partner's node-match condition passes, keep the link
+            if (matchedNodeIds.has(sourceId) || matchedNodeIds.has(targetId)) {
+                return true;
+            }
+
+            // Otherwise, check the link's own data
+            const sourceNode = graphData.nodes.find(n => n.id === sourceId);
+            const targetNode = graphData.nodes.find(n => n.id === targetId);
+            const sourceName = sourceNode ? String(sourceNode.properties?.name || sourceNode.name || '') : '';
+            const targetName = targetNode ? String(targetNode.properties?.name || targetNode.name || '') : '';
+            const linkTypeStr = String(link.type || '');
+            const eventIdStr = String(link.details?.event_id || '');
+
+            const searchableText = `${sourceName} ${targetName} ${linkTypeStr} ${eventIdStr} ${timestampStr}`.toLowerCase();
+            return evaluateMatch(searchableText, searchQuery);
         });
 
+        // Strict Node Removal - Ensure nodes exist only if they have surviving links
         const contextNodeIds = new Set();
-
         keptLinks.forEach(link => {
             contextNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
             contextNodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
@@ -409,7 +430,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                     {graphData.nodes.length > 0 && (
                         <>
                             <div className="search-bar-row">
-                                <input type="text" className="modern-input full-width" placeholder="Filter graph... (e.g., 'svchost OR 4688')" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                                <input type="text" className="modern-input full-width" placeholder="Filter graph by process name, event ID, action type, or time..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                             </div>
                             {globalTimeBounds && timeRange && (
                                 <TimelineFilter minTime={globalTimeBounds.min} maxTime={globalTimeBounds.max} startTime={timeRange.start} endTime={timeRange.end} onChange={(s, e) => setTimeRange({ start: s, end: e })} />
