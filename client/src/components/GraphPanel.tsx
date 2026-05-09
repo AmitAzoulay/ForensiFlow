@@ -2,20 +2,19 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
 import './GraphPanel.css';
-import * as d3 from 'd3-force';
 
 // ==========================================
 // CONSTANTS & HELPERS
 // ==========================================
-// const GRAPH_SETTINGS = {
-//     NODE_RADIUS: 16,
-//     LINK_COLOR: '#94a3b8',
-//     LINK_WIDTH: 2,
-//     ARROW_LENGTH: 10,
-//     ARROW_WIDTH: 5,
-//     NODE_MARGIN: 14,
-//     LABEL_FONT_SIZE: 4
-// };
+const GRAPH_SETTINGS = {
+    NODE_RADIUS: 16,
+    LINK_COLOR: '#94a3b8',
+    LINK_WIDTH: 2,
+    ARROW_LENGTH: 10,
+    ARROW_WIDTH: 5,
+    NODE_MARGIN: 14,
+    LABEL_FONT_SIZE: 4
+};
 
 const ICONS_SVG = {
     PROCESS: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2310b981"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>`,
@@ -23,8 +22,17 @@ const ICONS_SVG = {
     USER: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%233b82f6"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
     COMPUTER: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23475569"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>`,
     FILE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2306b6d4"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`,
-    TASK: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23f59e0b"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3zM12 4c.3 0 .5.2.5.5s-.2.5-.5.5-.5-.2-.5-.5.2-.5.5-.5z"/></svg>`,
+    TASK: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23f59e0b"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm4-4H7v-2h9v2zm0-4H7V7h9v2z"/></svg>`,
     SERVICE: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%238b5cf6"><path d="M4 11h16v2H4zm0-4h16v2H4zm0 8h16v2H4zm-2-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H2c-1.1 0-2-.9-2-2V7zm2 10h16V7H4v10z"/></svg>`
+};
+
+const extractTimestamp = (obj: any): number | null => {
+    if (!obj) return null;
+    if (obj.timestamp) return new Date(obj.timestamp).getTime();
+    if (obj.time) return new Date(obj.time).getTime();
+    if (obj.details?.timestamp) return new Date(obj.details.timestamp).getTime();
+    if (obj.details?.System?.TimeCreated?.SystemTime) return new Date(obj.details.System.TimeCreated.SystemTime).getTime();
+    return null;
 };
 
 const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any) => {
@@ -59,104 +67,93 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
     }
 };
 
-const drawCurvedLinkOnCanvas = (link: any, ctx: any, globalScale: number) => {
-    const start = link.source;
-    const end = link.target;
-    if (!start || !end || typeof start !== 'object' || typeof end !== 'object') return;
 
-    const deltaX = end.x - start.x;
-    const deltaY = end.y - start.y;
-    const curveness = link.curvature || 0;
+const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const startNode = link.source;
+    const endNode = link.target;
+    if (!startNode || !endNode || typeof startNode !== 'object' || typeof endNode !== 'object') return;
 
-    const cp = {
-        x: start.x + deltaX / 2 + (deltaY * curveness),
-        y: start.y + deltaY / 2 - (deltaX * curveness)
+    const deltaX = endNode.x - startNode.x;
+    const deltaY = endNode.y - startNode.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (distance === 0) return;
+
+    const totalOffset = GRAPH_SETTINGS.NODE_RADIUS + GRAPH_SETTINGS.NODE_MARGIN;
+    const normalVector = { x: -deltaY / distance, y: deltaX / distance };
+    const controlPointOffset = (link.curvature || 0) * distance;
+    const controlPoint = {
+        x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
+        y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
     };
 
-    const angle = Math.atan2(end.y - cp.y, end.x - cp.x);
+    const distToControlEnd = Math.sqrt(Math.pow(endNode.x - controlPoint.x, 2) + Math.pow(endNode.y - controlPoint.y, 2));
+    const distToControlStart = Math.sqrt(Math.pow(startNode.x - controlPoint.x, 2) + Math.pow(startNode.y - controlPoint.y, 2));
 
-    // --- חישוב רדיוס חכם לפי סוג האייקון ---
-    const isComputer = end.label === 'Computer';
-    const isUser = end.label === 'User';
-    
-    // הגדרת רדיוס בסיס
-    let baseRadius = 14; 
-    if (isUser) baseRadius = 17;
-    if (isComputer) baseRadius = 15;
+    if (distToControlEnd === 0 || distToControlStart === 0) return;
 
-    // תיקון זוויתי: אם החץ מגיע מלמעלה/למטה לאייקון מלבני (מחשב), נקטין את הרדיוס
-    // זה מונע את ה"חור" שראית בתמונה
-    const angleCos = Math.abs(Math.cos(angle));
-    const angleSin = Math.abs(Math.sin(angle));
-    const adjustedRadius = isComputer 
-        ? baseRadius * (angleCos + 0.7 * angleSin) 
-        : baseRadius;
+    const targetTipX = endNode.x - ((endNode.x - controlPoint.x) / distToControlEnd) * totalOffset;
+    const targetTipY = endNode.y - ((endNode.y - controlPoint.y) / distToControlEnd) * totalOffset;
+    const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
+    const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
 
-    // מרווח טקסט - מופיע רק אם הזום גבוה (Scale > 0.8)
-    const textGap = globalScale > 0.8 ? 24 : 0;
-    
-    const dynamicOffset = adjustedRadius + textGap;
-    const arrowSize = Math.max(4, 8 / globalScale); 
-
-    // מיקום ראש החץ
-    const arrowTipX = end.x - dynamicOffset * Math.cos(angle);
-    const arrowTipY = end.y - dynamicOffset * Math.sin(angle);
-
-    const lineStopX = arrowTipX - (arrowSize / 3) * Math.cos(angle);
-    const lineStopY = arrowTipY - (arrowSize / 3) * Math.sin(angle);
-
-    // נקודת התחלה (Source)
-    const sourceRadius = (start.label === 'User' || start.label === 'Computer') ? 17 : 14;
-    const startAngle = Math.atan2(cp.y - start.y, cp.x - start.x);
-    const sourceX = start.x + sourceRadius * Math.cos(startAngle);
-    const sourceY = start.y + sourceRadius * Math.sin(startAngle);
-
-    // 1. ציור הקו
     ctx.beginPath();
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = Math.max(0.5, 1.5 / globalScale);
-    ctx.moveTo(sourceX, sourceY);
-    ctx.quadraticCurveTo(cp.x, cp.y, lineStopX, lineStopY);
+    ctx.strokeStyle = GRAPH_SETTINGS.LINK_COLOR;
+    ctx.lineWidth = Math.max(GRAPH_SETTINGS.LINK_WIDTH / globalScale, 0.8);
+    ctx.moveTo(sourceTipX, sourceTipY);
+    ctx.quadraticCurveTo(
+        controlPoint.x,
+        controlPoint.y,
+        targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8),
+        targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * (GRAPH_SETTINGS.ARROW_LENGTH * 0.8)
+    );
     ctx.stroke();
 
-    // 2. ציור ראש החץ
+    const baseX = targetTipX - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
+    const baseY = targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
+
     ctx.beginPath();
-    ctx.fillStyle = '#94a3b8';
-    ctx.moveTo(arrowTipX, arrowTipY);
-    ctx.lineTo(
-        arrowTipX - arrowSize * Math.cos(angle - Math.PI / 7), 
-        arrowTipY - arrowSize * Math.sin(angle - Math.PI / 7)
-    );
-    ctx.lineTo(
-        arrowTipX - arrowSize * Math.cos(angle + Math.PI / 7), 
-        arrowTipY - arrowSize * Math.sin(angle + Math.PI / 7)
-    );
+    ctx.fillStyle = GRAPH_SETTINGS.LINK_COLOR;
+    ctx.moveTo(targetTipX, targetTipY);
+    ctx.lineTo(baseX - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY + ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
+    ctx.lineTo(baseX + ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
     ctx.closePath();
     ctx.fill();
 
-    // 3. טקסט על הקשר (נשאר ללא שינוי)
-    if (globalScale > 1.2) {
-        const labelText = (link.type || link.label || "").trim();
-        if (labelText.length > 0) {
-            const textX = 0.25 * start.x + 0.5 * cp.x + 0.25 * end.x;
-            const textY = 0.25 * start.y + 0.5 * cp.y + 0.25 * end.y;
-            const tx = 0.5 * (cp.x - start.x) + 0.5 * (end.x - cp.x);
-            const ty = 0.5 * (cp.y - start.y) + 0.5 * (end.y - cp.y);
-            const textAngle = Math.atan2(ty, tx);
+    // Hide labels when zoomed out too far
+    if (globalScale >= 0.8) {
+        const label = link.type || link.label || "";
+        if (!label) return;
 
-            ctx.save();
-            ctx.translate(textX, textY);
-            ctx.rotate(textAngle);
-            ctx.font = `${Math.max(7, 10 / globalScale)}px Inter, sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-            ctx.lineWidth = 3 / globalScale;
-            ctx.strokeText(labelText, 0, -2);
-            ctx.fillStyle = '#64748b';
-            ctx.fillText(labelText, 0, -2);
-            ctx.restore();
+        const textPos = {
+            x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
+            y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
+        };
+
+        let textAngle = Math.atan2(endNode.y - startNode.y, endNode.x - startNode.x);
+        if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
+            textAngle += Math.PI;
         }
+
+        const baseFontSize = GRAPH_SETTINGS.LABEL_FONT_SIZE > 5 ? GRAPH_SETTINGS.LABEL_FONT_SIZE : 10;
+        const fontSize = Math.max(baseFontSize / globalScale, 2);
+
+        ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+        const textWidth = ctx.measureText(label).width;
+        const bgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.6);
+
+        ctx.save();
+        ctx.translate(textPos.x, textPos.y);
+        ctx.rotate(textAngle);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2 - (fontSize * 0.4), bgDimensions[0], bgDimensions[1]);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#475569';
+        ctx.fillText(label, 0, -(fontSize * 0.4));
+        ctx.restore();
     }
 };
 
@@ -165,9 +162,10 @@ interface GraphPanelProps {
     onLinkClick: (link: any) => void;
     onDataLoaded: (data: any, caseId: string) => void;
     children?: React.ReactNode;
+    filtersComponent?: React.ReactNode;
 }
 
-const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataLoaded, children }) => {
+const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataLoaded, children, filtersComponent }) => {
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
     const [mode, setMode] = useState<'new' | 'existing'>('new');
@@ -175,20 +173,10 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const [selectedCaseId, setSelectedCaseId] = useState('');
     const [newInvestigationName, setNewInvestigationName] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [activeFilters, setActiveFilters] = useState<string[]>([]);
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
 
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
-
-    const toggleFilter = (category: string) => {
-        setActiveFilters(prev => 
-            prev.includes(category) 
-                ? prev.filter(c => c !== category) 
-                : [...prev, category]
-        );
-    };
 
     useEffect(() => {
         const loadSingleImage = (svgString: string) => {
@@ -233,65 +221,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         return () => resizeObserver.disconnect();
     }, []);
 
-    const filteredGraphData = useMemo(() => {
-        if (!graphData || !graphData.nodes) return { nodes: [], links: [] };
-
-        let keptNodes = graphData.nodes;
-        if (activeFilters.length > 0) {
-            keptNodes = keptNodes.filter(node => 
-                activeFilters.includes(node.label?.toLowerCase())
-            );
-        }
-
-        const evaluateMatch = (text: string, query: string) => {
-            if (!query.trim()) return true;
-            const orTerms = query.toLowerCase().split(/\s+or\s+/);
-            return orTerms.some(orTerm => {
-                const andTerms = orTerm.split(/\s+and\s+/);
-                return andTerms.every(andTerm => {
-                    let term = andTerm.trim();
-                    let isNot = false;
-                    if (term.startsWith('not ')) { isNot = true; term = term.substring(4).trim(); }
-                    else if (term.startsWith('!')) { isNot = true; term = term.substring(1).trim(); }
-                    if (!term) return true;
-                    const contains = text.includes(term);
-                    return isNot ? !contains : contains;
-                });
-            });
-        };
-
-        const finalLinks = graphData.links.filter(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-
-            const isSourceVisible = keptNodes.some(n => n.id === sourceId);
-            const isTargetVisible = keptNodes.some(n => n.id === targetId);
-            if (!isSourceVisible || !isTargetVisible) return false;
-
-            if (searchQuery.trim() === '') return true;
-
-            const sourceNode = graphData.nodes.find(n => n.id === sourceId);
-            const targetNode = graphData.nodes.find(n => n.id === targetId);
-            const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
-            return evaluateMatch(searchableText, searchQuery);
-        });
-
-        const finalNodeIds = new Set();
-        finalLinks.forEach(l => {
-            finalNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
-            finalNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
-        });
-
-        const finalNodes = searchQuery.trim() !== '' 
-            ? keptNodes.filter(n => finalNodeIds.has(n.id))
-            : keptNodes;
-
-        return { nodes: finalNodes, links: finalLinks };
-    }, [graphData, searchQuery, activeFilters]);
-
     const graphDataWithCurvature = useMemo(() => {
-        if (!filteredGraphData || !filteredGraphData.links) return filteredGraphData;
-        const linksWithCurvature = [...filteredGraphData.links];
+        if (!graphData || !graphData.links) return graphData;
+        const linksWithCurvature = [...graphData.links];
         const connectionCounter: Record<string, number> = {};
 
         linksWithCurvature.forEach(link => {
@@ -314,15 +246,16 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             link.curvature = centralOffset * baseCurvatureStep * (link.isReversed ? -1 : 1);
         });
 
-        return { nodes: filteredGraphData.nodes, links: linksWithCurvature };
-    }, [filteredGraphData]);
+        return { nodes: graphData.nodes, links: linksWithCurvature };
+    }, [graphData]);
 
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-2000);
-            graphRef.current.d3Force('link').distance(320);
-            graphRef.current.d3Force('collide', d3.forceCollide().radius(70));
-            graphRef.current.d3Force('center').strength(0.05);
+            // Increased repulsion to push nodes further apart
+            graphRef.current.d3Force('charge').strength(-1500);
+            // Increased link distance to give text labels more room
+            graphRef.current.d3Force('link').distance(350);
+            graphRef.current.d3Force('center').strength(0.01);
             graphRef.current.d3ReheatSimulation();
         }
     }, [graphDataWithCurvature]);
@@ -334,7 +267,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             const data = await apiService.getGraphData(selectedCaseId);
             onDataLoaded(data, selectedCaseId);
             setStatus('success');
-            setSearchQuery('');
         } catch (error) {
             console.error(error);
             setStatus('error');
@@ -350,7 +282,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
             onDataLoaded(data, uploadResult.case_id);
             setStatus('success');
             setNewInvestigationName('');
-            setSearchQuery('');
         } catch (error) {
             console.error(error);
             setStatus('error');
@@ -442,98 +373,36 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                 </div>
             </div>
 
-            {graphData.nodes.length > 0 && (
-                <>
-                    <div className="filter-chips-row">
-                        <span className="filter-label">Quick Filter:</span>
-                        {[
-                            { id: 'user', label: 'Users' },
-                            { id: 'process', label: 'Processes' },
-                            { id: 'computer', label: 'Computers' },
-                            { id: 'file', label: 'Files' },
-                            { id: 'registry', label: 'Registry'},
-                            { id: 'service', label: 'Services' },
-                            { id: 'task', label: 'Scheduled Tasks'}
-                        ].map(cat => {
-                            const count = graphData.nodes.filter(n => n.label?.toLowerCase() === cat.id).length;
-                            if (count === 0) return null;
-                            return (
-                                <button
-                                    key={cat.id}
-                                    className={`chip ${activeFilters.includes(cat.id) ? 'active' : ''}`}
-                                    onClick={() => toggleFilter(cat.id)}
-                                    style={{ '--active-color': cat.color } as any}
-                                >
-                                    <span className="chip-count">{count}</span>
-                                    {cat.label}
-                                </button>
-                            );
-                        })}
-                        {activeFilters.length > 0 && (
-                            <button className="clear-filters" onClick={() => setActiveFilters([])}>
-                                Clear All
-                            </button>
+            <div className="content-area">
+                <div
+                    className="graph-main-pane"
+                    style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}
+                >
+                    {filtersComponent}
+
+                    <div
+                        className="canvas-wrapper"
+                        ref={containerRef}
+                        style={{ flex: 1, position: 'relative', minHeight: 0, minWidth: 0, overflow: 'hidden', width: '100%', height: '100%' }}
+                    >
+                        {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
+                            <ForceGraph2D
+                                ref={graphRef}
+                                width={dimensions.width}
+                                height={dimensions.height}
+                                graphData={graphDataWithCurvature}
+                                onLinkClick={onLinkClick}
+                                cooldownTicks={100}
+                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
+                                linkCanvasObjectMode={() => 'replace'}
+                                linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
+                            />
+                        ) : (
+                            <div className="placeholder">
+                                {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
+                            </div>
                         )}
                     </div>
-
-                    <div className="search-bar-row">
-                        <input
-                            type="text"
-                            className="modern-input full-width"
-                            placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </>
-            )}
-
-            <div className="content-area">
-                <div className="canvas-wrapper" ref={containerRef}>
-                    {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
-                        <ForceGraph2D
-                            ref={graphRef}
-                            width={dimensions.width}
-                            height={dimensions.height}
-                            graphData={graphDataWithCurvature}
-                            onLinkClick={onLinkClick}
-                            cooldownTicks={100}
-                            nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
-                            linkCanvasObjectMode={() => 'replace'}
-                            linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
-                            linkPointerAreaPaint={(link, color, ctx) => {
-                                const startNode = link.source as any;
-                                const endNode = link.target as any;
-                                if (!startNode || !endNode || startNode.x === undefined || endNode.x === undefined) return;
-                                const deltaX = endNode.x - startNode.x;
-                                const deltaY = endNode.y - startNode.y;
-                                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                                if (distance === 0) return;
-                                const normalVector = { x: -deltaY / distance, y: deltaX / distance };
-                                const controlPointOffset = (link.curvature || 0) * distance;
-                                const controlPoint = {
-                                    x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
-                                    y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
-                                };
-                                ctx.beginPath();
-                                ctx.strokeStyle = color;
-                                ctx.lineWidth = 12;
-                                ctx.moveTo(startNode.x, startNode.y);
-                                ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, endNode.x, endNode.y);
-                                ctx.stroke();
-                            }}
-                            nodePointerAreaPaint={(node, color, ctx) => {
-                                ctx.fillStyle = color;
-                                ctx.beginPath();
-                                ctx.arc(node.x, node.y, 13 + 4, 0, 2 * Math.PI);
-                                ctx.fill();
-                            }}
-                        />
-                    ) : (
-                        <div className="placeholder">
-                            {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
-                        </div>
-                    )}
                 </div>
                 {children}
             </div>
