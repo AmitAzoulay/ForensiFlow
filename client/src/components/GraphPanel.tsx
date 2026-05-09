@@ -2,10 +2,6 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
 import './GraphPanel.css';
-import TimelineFilter from './TimelineFilter';
-import GraphFilters from './GraphFilters'; // Added import
-
-// ... Constants and Helpers remain the same ...
 
 // ==========================================
 // CONSTANTS & HELPERS

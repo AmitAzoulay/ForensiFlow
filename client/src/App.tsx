@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import GraphPanel from './components/GraphPanel';
 import LogPanel from './components/LogPanel';
 import AIAssistant from './components/AIAssistant';
-import TimelineFilter from './components/TimeLineFilter';
+import GraphFilters from './components/GraphFilters';
 import './App.css';
 
 const extractTimestamp = (obj: any): number | null => {
@@ -19,7 +19,6 @@ function App() {
   const [selectedLink, setSelectedLink] = useState(null);
   const [caseId, setCaseId] = useState(null);
 
-  // Filtering States
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [globalTimeBounds, setGlobalTimeBounds] = useState<{ min: number; max: number } | null>(null);
@@ -139,61 +138,17 @@ function App() {
   }, [rawGraphData, searchQuery, activeFilters, timeRange, globalTimeBounds]);
 
   const filtersUI = rawGraphData.nodes.length > 0 ? (
-    <div className="filters-wrapper">
-      <div className="filter-chips-row">
-        <span className="filter-label">Quick Filter:</span>
-        {[
-          { id: 'user', label: 'Users' },
-          { id: 'process', label: 'Processes' },
-          { id: 'computer', label: 'Computers' },
-          { id: 'file', label: 'Files' },
-          { id: 'registry', label: 'Registry' },
-          { id: 'service', label: 'Services' },
-          { id: 'task', label: 'Scheduled Tasks' }
-        ].map(cat => {
-          const count = rawGraphData.nodes.filter((n: any) => n.label?.toLowerCase() === cat.id).length;
-          if (count === 0) return null;
-          return (
-            <button
-              key={cat.id}
-              className={`chip ${activeFilters.includes(cat.id) ? 'active' : ''}`}
-              onClick={() => toggleFilter(cat.id)}
-              style={{ '--active-color': cat.color } as any}
-            >
-              <span className="chip-count">{count}</span>
-              {cat.label}
-            </button>
-          );
-        })}
-        {activeFilters.length > 0 && (
-          <button className="clear-filters" onClick={() => setActiveFilters([])}>
-            Clear All
-          </button>
-        )}
-      </div>
-
-      <div className="filter-chips-row" style={{ paddingTop: 0 }}>
-        <span className="filter-label">Advanced Filter:</span>
-        <input
-          type="text"
-          className="modern-input"
-          style={{ flex: 1, margin: 0 }}
-          placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
-
-      {globalTimeBounds && timeRange && (
-        <TimelineFilter
-          minTime={globalTimeBounds.min}
-          maxTime={globalTimeBounds.max}
-          startTime={timeRange.start}
-          endTime={timeRange.end}
-          onChange={(start, end) => setTimeRange({ start, end })}
-        />
-      )}
-    </div>
+    <GraphFilters
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      activeFilters={activeFilters}
+      onToggleFilter={toggleFilter}
+      onClearFilters={() => setActiveFilters([])}
+      nodes={rawGraphData.nodes}
+      globalTimeBounds={globalTimeBounds}
+      timeRange={timeRange}
+      onTimeRangeChange={(start, end) => setTimeRange({ start, end })}
+    />
   ) : null;
 
   return (
