@@ -1,6 +1,6 @@
 import React from 'react';
 import './GraphFilters.css';
-import TimeLineFilter from './TimeLineFilter'; // שים לב לשם הקובץ עם ה-L הגדולה
+import TimeLineFilter from './TimeLineFilter';
 
 interface GraphFiltersProps {
     searchQuery: string;
@@ -26,7 +26,6 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     onTimeRangeChange
 }) => {
 
-    // רשימת הקטגוריות לסינון מהיר
     const categories = [
         { id: 'user', label: 'Users' },
         { id: 'process', label: 'Processes' },
@@ -39,7 +38,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
 
     return (
         <div className="filters-wrapper">
-            {/* שורת ה-Quick Filters (Chips) */}
+            {/* שורת ה-Quick Filters (צ'יפים) - נשארת כפי שהייתה */}
             <div className="filter-chips-row">
                 <span className="filter-label">Quick Filter:</span>
                 {categories.map(cat => {
@@ -65,29 +64,34 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                 )}
             </div>
 
-            {/* שורת ה-Advanced Filter (חיפוש טקסטואלי) */}
-            <div className="filter-chips-row" style={{ paddingTop: 0 }}>
-                <span className="filter-label">Advanced Filter:</span>
-                <input
-                    type="text"
-                    className="modern-input"
-                    style={{ flex: 1, margin: 0 }}
-                    placeholder="Filter graph... (e.g., 'svchost OR 4688', 'admin AND NOT 4624')"
-                    value={searchQuery}
-                    onChange={(e) => onSearchChange(e.target.value)}
-                />
-            </div>
+            {/* השורה המאוחדת: Advanced Filter (חיפוש) מצד שמאל ו-Timeline מצד ימין */}
+            <div className="advanced-filters-row">
+                
+                {/* קבוצת החיפוש */}
+                <div className="search-group">
+                    <span className="filter-label">Advanced:</span>
+                    <input
+                        type="text"
+                        className="modern-input"
+                        placeholder="Filter graph... (e.g., 'svchost OR 4688')"
+                        value={searchQuery}
+                        onChange={(e) => onSearchChange(e.target.value)}
+                    />
+                </div>
 
-            {/* רכיב ה-Timeline Filter */}
-            {globalTimeBounds && timeRange && (
-                <TimeLineFilter
-                    minTime={globalTimeBounds.min}
-                    maxTime={globalTimeBounds.max}
-                    startTime={timeRange.start}
-                    endTime={timeRange.end}
-                    onChange={onTimeRangeChange}
-                />
-            )}
+                {/* קבוצת ציר הזמן - מופיעה לצד החיפוש */}
+                {globalTimeBounds && timeRange && (
+                    <div className="time-group">
+                        <TimeLineFilter
+                            minTime={globalTimeBounds.min}
+                            maxTime={globalTimeBounds.max}
+                            startTime={timeRange.start}
+                            endTime={timeRange.end}
+                            onChange={onTimeRangeChange}
+                        />
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
