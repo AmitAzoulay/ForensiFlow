@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
-import TimelineFilter from './TimelineFilter';
 import './GraphPanel.css';
-import * as d3 from 'd3-force';
 
 // ==========================================
 // CONSTANTS & HELPERS
@@ -252,10 +250,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
 
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            graphRef.current.d3Force('charge').strength(-150);
-            graphRef.current.d3Force('link').distance(180);
-            graphRef.current.d3Force('collide', d3.forceCollide().radius(30));
-            graphRef.current.d3Force('center').strength(0.05);
+            // Increased repulsion to push nodes further apart
+            graphRef.current.d3Force('charge').strength(-1500);
+            // Increased link distance to give text labels more room
+            graphRef.current.d3Force('link').distance(350);
+            graphRef.current.d3Force('center').strength(0.01);
             graphRef.current.d3ReheatSimulation();
         }
     }, [graphDataWithCurvature]);
