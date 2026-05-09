@@ -58,13 +58,7 @@ const TimelineFilter: React.FC<TimelineFilterProps> = ({ minTime, maxTime, start
     }
 
     return (
-        <div className="timeline-container">
-            <div className="timeline-header">
-                <span className="timeline-title">Time Range Filter</span>
-                <span className="timeline-display">
-                    {formatTime(minVal)} &mdash; {formatTime(maxVal)}
-                </span>
-            </div>
+        <div className="timeline-container compact">
             <div className="multi-range-slider">
                 <input
                     type="range"
@@ -74,6 +68,7 @@ const TimelineFilter: React.FC<TimelineFilterProps> = ({ minTime, maxTime, start
                     onChange={handleMinChange}
                     className="thumb thumb-left"
                     style={{ zIndex: minVal > maxTime - 100 ? "5" : "3" }}
+                    title={`From: ${formatTime(minVal)}`}
                 />
                 <input
                     type="range"
@@ -82,15 +77,18 @@ const TimelineFilter: React.FC<TimelineFilterProps> = ({ minTime, maxTime, start
                     value={maxVal}
                     onChange={handleMaxChange}
                     className="thumb thumb-right"
+                    title={`To: ${formatTime(maxVal)}`}
                 />
                 <div className="slider">
                     <div className="slider__track" />
                     <div ref={range} className="slider__range" />
                 </div>
             </div>
+            
+            {/* פתרון 1: הצגת הטווח הנבחר במקום זמני הקצה הסטטיים */}
             <div className="timeline-labels">
-                <span>{formatTime(minTime)}</span>
-                <span>{formatTime(maxTime)}</span>
+                <span className="selected-time-active">{formatTime(minVal)}</span>
+                <span className="selected-time-active">{formatTime(maxVal)}</span>
             </div>
         </div>
     );

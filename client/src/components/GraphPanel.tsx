@@ -35,37 +35,38 @@ const extractTimestamp = (obj: any): number | null => {
     return null;
 };
 
-const drawNodeOnCanvas = (node: any, ctx: CanvasRenderingContext2D, globalScale: number, nodeIcons: Record<string, HTMLImageElement>) => {
-    const rawLabel = String(node.properties?.name || node.name || node.id || '');
-    // Truncate long node names with ellipses
-    const label = rawLabel.length > 20 ? rawLabel.substring(0, 17) + "..." : rawLabel;
+const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any) => {
+    const rawLabel = node.properties?.name || node.name || node.id;
+    const label = (rawLabel.length > 20) ? rawLabel.substring(0, 12) + "..." : rawLabel;
 
-    const iconSize = 26;
+    const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
     const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
 
     if (iconImage) {
         ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
-    } else {
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI);
-        ctx.fillStyle = '#64748b';
-        ctx.fill();
     }
 
-    // Hide labels when zoomed out too far
-    if (globalScale >= 0.8) {
-        const fontSize = 11 / globalScale;
+    // ציור השם - מופיע רק בזום מסוים ומותאם בגודלו
+    if (globalScale > 0.8) {
+        // פונט שגדל עם הזום אבל נשאר בטווח הגיוני
+        const fontSize = Math.min(14, Math.max(10, 12 / globalScale)); 
         ctx.font = `500 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#1e293b';
 
-        const lines = label.split('\n');
-        lines.forEach((line: string, index: number) => {
-            ctx.fillText(line, node.x, node.y + iconSize / 2 + 4 + (index * fontSize));
-        });
+        const x = node.x;
+        // מיקום גמיש מתחת לאייקון
+        const y = node.y + iconSize / 2 + 2; 
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 3 / globalScale;
+        ctx.strokeText(label, x, y);
+
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(label, x, y);
     }
 };
+
 
 const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const startNode = link.source;

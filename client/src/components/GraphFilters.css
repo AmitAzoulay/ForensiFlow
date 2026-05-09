@@ -64,5 +64,35 @@
 }
 
 .modern-input:focus {
-    border-color: #475569;
+    outline: none !important; 
+    border-color: #94a3b8!important; 
+    box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.05) !important;
+}
+
+/* השורה החדשה המאגדת את החיפוש והזמן */
+.advanced-filters-row {
+    display: flex;
+    align-items: center;
+    gap: 24px;          /* רווח בין החיפוש לציר הזמן */
+    padding: 8px 24px;
+    background-color: #ffffff;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.search-group {
+    flex: 1.5;          /* נותן לחיפוש קצת יותר מקום מהזמן */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.time-group {
+    flex: 1;            /* הזמן תופס את שאר המקום */
+    min-width: 350px;   /* מבטיח שהסליידר לא יהיה קטן מדי */
+}
+
+/* ביטול הגבול התחתון של שורת הצ'יפים כדי שלא יהיה "פס" כפול */
+.filter-chips-row {
+    border-bottom: none;
+    padding-bottom: 4px;
 }
