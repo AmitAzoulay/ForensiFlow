@@ -181,6 +181,21 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
         
         if ip_address and ip_address not in ['-', '127.0.0.1', '::1']:
              _insert_graph_relationship(tx, case_id, "Computer", ip_address, "File", share_name, "REMOTE_SHARE_ACCESS", details)
+    elif event_id == '4732':
+        src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
+        dst_user = _resolve_user(data_map, 'MemberName', 'MemberSid', sid_map)
+        group_name = data_map.get('TargetUserName', 'Unknown_Group')
+        _insert_graph_relationship(tx, case_id, "User", src_user, "User", dst_user, "ADDED_MEMBER", details)
+        _insert_graph_relationship(tx, case_id, "User", dst_user, "Group", group_name, "ADDED_TO_GROUP", details)
+
+    elif event_id == '4656':
+        proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
+        obj_name = data_map.get('ObjectName', 'Unknown_Object')
+        obj_type = data_map.get('ObjectType', 'Unknown_Type')
+        if obj_type.lower() == 'process':
+             _insert_graph_relationship(tx, case_id, "Process", proc, "Process", obj_name, "REQUESTED_HANDLE", details)
+        else:
+             _insert_graph_relationship(tx, case_id, "Process", proc, "File", obj_name, "REQUESTED_HANDLE", details)
 
 def parse_and_store_evtx(filepath, case_id, case_name, db_client):
     """
