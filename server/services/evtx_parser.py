@@ -18,7 +18,7 @@ def _insert_graph_relationship(tx, case_id, source_label, source_data, target_la
     if not s_id or not t_id or s_id in ['-', ''] or t_id in ['-', '']:
         return
 
-    valid_labels = ["User", "Computer", "Process", "Registry", "Task", "Service", "File"]
+    valid_labels = ["User", "Computer", "Process", "Registry", "Task", "Service", "File", "Group"]
     source_label = source_label.capitalize()
     target_label = target_label.capitalize()
 
@@ -185,8 +185,8 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
         src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
         dst_user = _resolve_user(data_map, 'MemberName', 'MemberSid', sid_map)
         group_name = data_map.get('TargetUserName', 'Unknown_Group')
-        _insert_graph_relationship(tx, case_id, "User", src_user, "User", dst_user, "ADDED_MEMBER", details)
         _insert_graph_relationship(tx, case_id, "User", dst_user, "Group", group_name, "ADDED_TO_GROUP", details)
+        _insert_graph_relationship(tx, case_id, "User", src_user, "Group", group_name, "MODIFIED_GROUP", details)
 
     elif event_id == '4656':
         proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)

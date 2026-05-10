@@ -71,15 +71,11 @@ function App() {
     }
   }, [rawGraphData]);
 
+  // ==============================================
+  // כאן נמצא התיקון הקריטי: סינון המידע לגרף
+  // ==============================================
   const filteredGraphData = useMemo(() => {
     if (!rawGraphData || !rawGraphData.nodes) return { nodes: [], links: [] };
-
-    let keptNodes = rawGraphData.nodes;
-    if (activeFilters.length > 0) {
-      keptNodes = keptNodes.filter((node: any) =>
-        activeFilters.includes(node.label?.toLowerCase())
-      );
-    }
 
     const evaluateMatch = (text: string, query: string) => {
       if (!query.trim()) return true;
@@ -98,14 +94,8 @@ function App() {
       });
     };
 
-    const finalLinks = rawGraphData.links.filter((link: any) => {
-      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-
-      const isSourceVisible = keptNodes.some((n: any) => n.id === sourceId);
-      const isTargetVisible = keptNodes.some((n: any) => n.id === targetId);
-      if (!isSourceVisible || !isTargetVisible) return false;
-
+    // 1. קודם נסנן קשתות לפי החיפוש הכללי וציר הזמן
+    let validLinks = rawGraphData.links.filter((link: any) => {
       if (timeRange) {
         const t = extractTimestamp(link);
         if (t && (t < timeRange.start || t > timeRange.end)) {
@@ -113,26 +103,59 @@ function App() {
         }
       }
 
-      if (searchQuery.trim() === '') return true;
+      if (searchQuery.trim() !== '') {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        const sourceNode = rawGraphData.nodes.find((n: any) => n.id === sourceId);
+        const targetNode = rawGraphData.nodes.find((n: any) => n.id === targetId);
+        const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
+        if (!evaluateMatch(searchableText, searchQuery)) return false;
+      }
 
-      const sourceNode = rawGraphData.nodes.find((n: any) => n.id === sourceId);
-      const targetNode = rawGraphData.nodes.find((n: any) => n.id === targetId);
-      const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
-      return evaluateMatch(searchableText, searchQuery);
+      return true;
     });
 
-    const finalNodeIds = new Set();
-    finalLinks.forEach((l: any) => {
-      finalNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
-      finalNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
-    });
+    let finalNodes = rawGraphData.nodes;
+    let finalLinks = validLinks;
 
-    const isTimeFiltered = timeRange && globalTimeBounds &&
-      (timeRange.start > globalTimeBounds.min || timeRange.end < globalTimeBounds.max);
+    // 2. פילטור הקטגוריות (המטרה + השכנים!)
+    if (activeFilters.length > 0) {
+      // א. נמצא מי הם צמתי המטרה שלנו
+      const primaryNodeIds = new Set(
+        rawGraphData.nodes
+          .filter((n: any) => activeFilters.includes(n.label?.toLowerCase()))
+          .map((n: any) => n.id)
+      );
 
-    const finalNodes = (searchQuery.trim() !== '' || isTimeFiltered)
-      ? keptNodes.filter((n: any) => finalNodeIds.has(n.id))
-      : keptNodes;
+      // ב. נשאיר אך ורק קשתות שאחד הצדדים שלהן הוא צומת מטרה
+      finalLinks = validLinks.filter((link: any) => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        return primaryNodeIds.has(sourceId) || primaryNodeIds.has(targetId);
+      });
+
+      // ג. נאסוף גם את צמתי המטרה וגם את השכנים שלהם מהקשתות שמצאנו
+      const requiredNodeIds = new Set(primaryNodeIds);
+      finalLinks.forEach((link: any) => {
+        requiredNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
+        requiredNodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
+      });
+
+      finalNodes = rawGraphData.nodes.filter((n: any) => requiredNodeIds.has(n.id));
+    } else {
+      // 3. אם לא בחרנו קטגוריה, נדאג להעלים "אייקונים באוויר" שנוצרו בגלל סינון זמן/חיפוש
+      const isTimeFiltered = timeRange && globalTimeBounds &&
+        (timeRange.start > globalTimeBounds.min || timeRange.end < globalTimeBounds.max);
+
+      if (searchQuery.trim() !== '' || isTimeFiltered) {
+        const linkedNodeIds = new Set();
+        finalLinks.forEach((l: any) => {
+          linkedNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
+          linkedNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
+        });
+        finalNodes = rawGraphData.nodes.filter((n: any) => linkedNodeIds.has(n.id));
+      }
+    }
 
     return { nodes: finalNodes, links: finalLinks };
   }, [rawGraphData, searchQuery, activeFilters, timeRange, globalTimeBounds]);
