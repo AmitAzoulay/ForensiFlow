@@ -30,6 +30,21 @@ const LogPanel: React.FC<LogPanelProps> = ({ selectedLink, caseId }) => {
         return node.properties?.name || node.name || node.id || 'Unknown';
     };
 
+    const formatTimestamp = (timestampStr: string | undefined) => {
+        if (!timestampStr) return 'N/A';
+
+        const dateObj = new Date(timestampStr);
+
+        if (isNaN(dateObj.getTime())) {
+            return timestampStr;
+        }
+
+        return dateObj.toLocaleString(undefined, {
+            month: 'short', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+    };
+
     return (
         <div className="log-panel-sidebar">
             <div className="log-panel-header">
@@ -46,7 +61,9 @@ const LogPanel: React.FC<LogPanelProps> = ({ selectedLink, caseId }) => {
                             </div>
                             <div className="title-item">
                                 <span className="title-label">TIME:</span>
-                                <span className="title-value timestamp">{selectedLink.details?.timestamp || 'N/A'}</span>
+                                <span className="title-value timestamp">
+                                    {formatTimestamp(selectedLink.details?.timestamp)}
+                                </span>
                             </div>
                         </div>
 
