@@ -28,6 +28,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
 
     const categories = [
         { id: 'user', label: 'Users' },
+        { id: 'group', label: 'Groups' },
         { id: 'process', label: 'Processes' },
         { id: 'computer', label: 'Computers' },
         { id: 'file', label: 'Files' },
