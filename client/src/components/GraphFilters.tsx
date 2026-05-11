@@ -1,3 +1,4 @@
+// GraphFilters.tsx
 import React from 'react';
 import './GraphFilters.css';
 import TimeLineFilter from './TimeLineFilter';
@@ -39,7 +40,6 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
 
     return (
         <div className="filters-wrapper">
-            {/* שורת ה-Quick Filters (צ'יפים) - נשארת כפי שהייתה */}
             <div className="filter-chips-row">
                 <span className="filter-label">Quick Filter:</span>
                 {categories.map(cat => {
@@ -65,22 +65,18 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                 )}
             </div>
 
-            {/* השורה המאוחדת: Advanced Filter (חיפוש) מצד שמאל ו-Timeline מצד ימין */}
             <div className="advanced-filters-row">
-                
-                {/* קבוצת החיפוש */}
                 <div className="search-group">
                     <span className="filter-label">Advanced:</span>
                     <input
                         type="text"
                         className="modern-input"
-                        placeholder="Filter graph... (e.g., 'svchost OR 4688')"
+                        placeholder="Search OR format: 4688.ProcessName==cmd.exe"
                         value={searchQuery}
                         onChange={(e) => onSearchChange(e.target.value)}
                     />
                 </div>
 
-                {/* קבוצת ציר הזמן - מופיעה לצד החיפוש */}
                 {globalTimeBounds && timeRange && (
                     <div className="time-group">
                         <TimeLineFilter
