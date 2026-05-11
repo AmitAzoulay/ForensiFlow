@@ -50,14 +50,14 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
     // ציור השם - מופיע רק בזום מסוים ומותאם בגודלו
     if (globalScale > 0.8) {
         // פונט שגדל עם הזום אבל נשאר בטווח הגיוני
-        const fontSize = Math.min(14, Math.max(10, 12 / globalScale)); 
+        const fontSize = Math.min(14, Math.max(10, 12 / globalScale));
         ctx.font = `500 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
 
         const x = node.x;
         // מיקום גמיש מתחת לאייקון
-        const y = node.y + iconSize / 2 + 2; 
+        const y = node.y + iconSize / 2 + 2;
 
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 3 / globalScale;
@@ -254,7 +254,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
             // Increased repulsion to push nodes further apart
-            graphRef.current.d3Force('charge').strength(-1500);
+            graphRef.current.d3Force('charge').strength(-300);
             // Increased link distance to give text labels more room
             graphRef.current.d3Force('link').distance(350);
             graphRef.current.d3Force('center').strength(0.01);

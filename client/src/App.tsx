@@ -1,3 +1,4 @@
+// App.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import GraphPanel from './components/GraphPanel';
 import LogPanel from './components/LogPanel';
@@ -71,30 +72,9 @@ function App() {
     }
   }, [rawGraphData]);
 
-  // ==============================================
-  // כאן נמצא התיקון הקריטי: סינון המידע לגרף
-  // ==============================================
   const filteredGraphData = useMemo(() => {
     if (!rawGraphData || !rawGraphData.nodes) return { nodes: [], links: [] };
 
-    const evaluateMatch = (text: string, query: string) => {
-      if (!query.trim()) return true;
-      const orTerms = query.toLowerCase().split(/\s+or\s+/);
-      return orTerms.some(orTerm => {
-        const andTerms = orTerm.split(/\s+and\s+/);
-        return andTerms.every(andTerm => {
-          let term = andTerm.trim();
-          let isNot = false;
-          if (term.startsWith('not ')) { isNot = true; term = term.substring(4).trim(); }
-          else if (term.startsWith('!')) { isNot = true; term = term.substring(1).trim(); }
-          if (!term) return true;
-          const contains = text.includes(term);
-          return isNot ? !contains : contains;
-        });
-      });
-    };
-
-    // 1. קודם נסנן קשתות לפי החיפוש הכללי וציר הזמן
     let validLinks = rawGraphData.links.filter((link: any) => {
       if (timeRange) {
         const t = extractTimestamp(link);
@@ -104,12 +84,61 @@ function App() {
       }
 
       if (searchQuery.trim() !== '') {
-        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-        const sourceNode = rawGraphData.nodes.find((n: any) => n.id === sourceId);
-        const targetNode = rawGraphData.nodes.find((n: any) => n.id === targetId);
-        const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
-        if (!evaluateMatch(searchableText, searchQuery)) return false;
+        const query = searchQuery.trim();
+
+        const evaluateTerm = (term: string) => {
+          let isNot = false;
+          let cleanTerm = term.trim();
+
+          if (cleanTerm.toLowerCase().startsWith('not ')) {
+            isNot = true;
+            cleanTerm = cleanTerm.substring(4).trim();
+          } else if (cleanTerm.startsWith('!')) {
+            isNot = true;
+            cleanTerm = cleanTerm.substring(1).trim();
+          }
+
+          if (!cleanTerm) return true;
+
+          let matchResult = false;
+
+          const advancedPattern = /^(\d+)\.([a-zA-Z0-9_]+)\s*==\s*(["']?)(.*)\3$/i;
+          const advancedMatch = cleanTerm.match(advancedPattern);
+
+          if (advancedMatch) {
+            const targetEventId = advancedMatch[1];
+            const targetField = advancedMatch[2];
+            const targetValue = advancedMatch[4].toLowerCase();
+
+            const details = link.details || {};
+            const evId = details.event_id?.toString() || "";
+
+            if (evId === targetEventId && (targetField in details)) {
+              const actualValue = details[targetField]?.toString().toLowerCase() || "";
+              matchResult = actualValue.includes(targetValue) || actualValue === targetValue;
+            } else {
+              matchResult = false;
+            }
+          } else {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            const sourceNode = rawGraphData.nodes.find((n: any) => n.id === sourceId);
+            const targetNode = rawGraphData.nodes.find((n: any) => n.id === targetId);
+
+            const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
+            matchResult = searchableText.includes(cleanTerm.toLowerCase());
+          }
+
+          return isNot ? !matchResult : matchResult;
+        };
+
+        const orGroups = query.split(/\s+or\s+/i);
+        const passedSearch = orGroups.some(orGroup => {
+          const andTerms = orGroup.split(/\s+and\s+/i);
+          return andTerms.every(term => evaluateTerm(term));
+        });
+
+        if (!passedSearch) return false;
       }
 
       return true;
@@ -118,23 +147,19 @@ function App() {
     let finalNodes = rawGraphData.nodes;
     let finalLinks = validLinks;
 
-    // 2. פילטור הקטגוריות (המטרה + השכנים!)
     if (activeFilters.length > 0) {
-      // א. נמצא מי הם צמתי המטרה שלנו
       const primaryNodeIds = new Set(
         rawGraphData.nodes
           .filter((n: any) => activeFilters.includes(n.label?.toLowerCase()))
           .map((n: any) => n.id)
       );
 
-      // ב. נשאיר אך ורק קשתות שאחד הצדדים שלהן הוא צומת מטרה
       finalLinks = validLinks.filter((link: any) => {
         const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
         const targetId = typeof link.target === 'object' ? link.target.id : link.target;
         return primaryNodeIds.has(sourceId) || primaryNodeIds.has(targetId);
       });
 
-      // ג. נאסוף גם את צמתי המטרה וגם את השכנים שלהם מהקשתות שמצאנו
       const requiredNodeIds = new Set(primaryNodeIds);
       finalLinks.forEach((link: any) => {
         requiredNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
@@ -143,7 +168,6 @@ function App() {
 
       finalNodes = rawGraphData.nodes.filter((n: any) => requiredNodeIds.has(n.id));
     } else {
-      // 3. אם לא בחרנו קטגוריה, נדאג להעלים "אייקונים באוויר" שנוצרו בגלל סינון זמן/חיפוש
       const isTimeFiltered = timeRange && globalTimeBounds &&
         (timeRange.start > globalTimeBounds.min || timeRange.end < globalTimeBounds.max);
 
