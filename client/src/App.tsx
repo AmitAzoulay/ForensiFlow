@@ -1,4 +1,3 @@
-// App.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import GraphPanel from './components/GraphPanel';
 import LogPanel from './components/LogPanel';
@@ -24,6 +23,7 @@ function App() {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [globalTimeBounds, setGlobalTimeBounds] = useState<{ min: number; max: number } | null>(null);
   const [timeRange, setTimeRange] = useState<{ start: number; end: number } | null>(null);
+  const [externalAIPrompt, setExternalAIPrompt] = useState<{ text: string; timestamp: number } | null>(null);
 
   const handleDataLoaded = (data: any, newCaseId: any) => {
     setRawGraphData(data);
@@ -43,6 +43,19 @@ function App() {
         ? prev.filter(c => c !== category)
         : [...prev, category]
     );
+  };
+
+  const handleSendNodeToAI = (node: any) => {
+    const nodeName = node.properties?.name || node.name || node.id;
+    setExternalAIPrompt({
+      text: `Please investigate node "${nodeName}". Focus on this node, its connected entities, and related chronological graph logs.`,
+      timestamp: Date.now()
+    });
+  };
+
+  const handleApplyNodeFilter = (node: any) => {
+    const nodeName = node.properties?.name || node.name || node.id;
+    setSearchQuery(nodeName);
   };
 
   useEffect(() => {
@@ -205,6 +218,8 @@ function App() {
         onLinkClick={handleLinkClick}
         onDataLoaded={handleDataLoaded}
         filtersComponent={filtersUI}
+        onSendNodeToAI={handleSendNodeToAI}
+        onApplyNodeFilter={handleApplyNodeFilter}
       >
         <LogPanel
           selectedLink={selectedLink}
@@ -212,7 +227,10 @@ function App() {
         />
       </GraphPanel>
 
-      <AIAssistant caseId={caseId} />
+      <AIAssistant
+        caseId={caseId}
+        externalPrompt={externalAIPrompt}
+      />
     </>
   );
 }
