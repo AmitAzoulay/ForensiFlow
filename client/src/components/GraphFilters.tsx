@@ -14,6 +14,8 @@ interface GraphFiltersProps {
     onTimeRangeChange: (start: number, end: number) => void;
     canGoBack?: boolean;
     onGoBack?: () => void;
+    canGoForward?: boolean;
+    onGoForward?: () => void;
 }
 
 const GraphFilters: React.FC<GraphFiltersProps> = ({
@@ -27,7 +29,9 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     timeRange,
     onTimeRangeChange,
     canGoBack,
-    onGoBack
+    onGoBack,
+    canGoForward,
+    onGoForward
 }) => {
 
     const categories = [
@@ -44,17 +48,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     return (
         <div className="filters-wrapper">
             <div className="filter-chips-row">
-                {canGoBack && onGoBack && (
-                    <button className="back-history-btn" onClick={onGoBack} title="Go back to previous view">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="19" y1="12" x2="5" y2="12"></line>
-                            <polyline points="12 19 5 12 12 5"></polyline>
-                        </svg>
-                        Back
-                    </button>
-                )}
-
-                <span className="filter-label">Quick Filter:</span>
+                <span className="filter-label">QUICK FILTER:</span>
                 {categories.map(cat => {
                     const count = nodes.filter((n: any) => n.label?.toLowerCase() === cat.id).length;
                     if (count === 0) return null;
@@ -76,11 +70,32 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                         Clear All
                     </button>
                 )}
+
+                <div className="history-nav-container">
+                    {canGoBack && onGoBack && (
+                        <button className="back-history-btn" onClick={onGoBack} title="Go back to previous view">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            Back
+                        </button>
+                    )}
+                    {canGoForward && onGoForward && (
+                        <button className="forward-history-btn" onClick={onGoForward} title="Go forward to next view">
+                            Forward
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="advanced-filters-row">
                 <div className="search-group">
-                    <span className="filter-label">Advanced:</span>
+                    <span className="filter-label">ADVANCED:</span>
                     <input
                         type="text"
                         className="modern-input"
