@@ -5,7 +5,6 @@ import AIAssistant from './components/AIAssistant';
 import GraphFilters from './components/GraphFilters';
 import './App.css';
 
-// ViewState interface defines what parameters we need to save in history
 interface ViewState {
   searchQuery: string;
   activeFilters: string[];
@@ -33,8 +32,8 @@ function App() {
 
   const [externalAIPrompt, setExternalAIPrompt] = useState<{ text: string; timestamp: number } | null>(null);
 
-  // State for tracking view history
-  const [viewHistory, setViewHistory] = useState<ViewState[]>([]);
+  const [pastHistory, setPastHistory] = useState<ViewState[]>([]);
+  const [futureHistory, setFutureHistory] = useState<ViewState[]>([]);
 
   const handleDataLoaded = (data: any, newCaseId: any) => {
     setRawGraphData(data);
@@ -42,7 +41,8 @@ function App() {
     setSelectedLink(null);
     setSearchQuery('');
     setActiveFilters([]);
-    setViewHistory([]); // Clear history on new data load
+    setPastHistory([]);
+    setFutureHistory([]);
   };
 
   const handleLinkClick = (link: any) => {
@@ -66,25 +66,43 @@ function App() {
   };
 
   const handleApplyNodeFilter = (node: any) => {
-    // Save current view state before applying new filter
-    setViewHistory(prev => [...prev, { searchQuery, activeFilters, timeRange }]);
+    setPastHistory(prev => [...prev, { searchQuery, activeFilters, timeRange }]);
+    setFutureHistory([]);
 
     const nodeName = node.properties?.name || node.name || node.id;
     setSearchQuery(nodeName);
   };
 
   const handleGoBack = () => {
-    setViewHistory(prev => {
-      if (prev.length === 0) return prev;
-      const newHistory = [...prev];
-      const previousState = newHistory.pop();
-      if (previousState) {
-        setSearchQuery(previousState.searchQuery);
-        setActiveFilters(previousState.activeFilters);
-        setTimeRange(previousState.timeRange);
-      }
-      return newHistory;
-    });
+    if (pastHistory.length === 0) return;
+
+    const current = { searchQuery, activeFilters, timeRange };
+    const newPast = [...pastHistory];
+    const previous = newPast.pop();
+
+    if (previous) {
+      setFutureHistory(prev => [current, ...prev]);
+      setSearchQuery(previous.searchQuery);
+      setActiveFilters(previous.activeFilters);
+      setTimeRange(previous.timeRange);
+      setPastHistory(newPast);
+    }
+  };
+
+  const handleGoForward = () => {
+    if (futureHistory.length === 0) return;
+
+    const current = { searchQuery, activeFilters, timeRange };
+    const newFuture = [...futureHistory];
+    const next = newFuture.shift();
+
+    if (next) {
+      setPastHistory(prev => [...prev, current]);
+      setSearchQuery(next.searchQuery);
+      setActiveFilters(next.activeFilters);
+      setTimeRange(next.timeRange);
+      setFutureHistory(newFuture);
+    }
   };
 
   useEffect(() => {
@@ -237,8 +255,10 @@ function App() {
       globalTimeBounds={globalTimeBounds}
       timeRange={timeRange}
       onTimeRangeChange={(start, end) => setTimeRange({ start, end })}
-      canGoBack={viewHistory.length > 0}
+      canGoBack={pastHistory.length > 0}
       onGoBack={handleGoBack}
+      canGoForward={futureHistory.length > 0}
+      onGoForward={handleGoForward}
     />
   ) : null;
 

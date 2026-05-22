@@ -95,8 +95,53 @@
     /* מבטיח שהסליידר לא יהיה קטן מדי */
 }
 
-/* ביטול הגבול התחתון של שורת הצ'יפים כדי שלא יהיה "פס" כפול */
+
+/* Container for the filter chips row */
+/* Container for the filter chips row */
 .filter-chips-row {
-    border-bottom: none;
-    padding-bottom: 4px;
+    display: flex;
+    align-items: center;
+    /* Removed width: 100% to prevent horizontal overflow */
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* History navigation container pushed to the right with safe margins */
+.history-nav-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    /* Added a small margin to align perfectly with the timeline border */
+    margin-right: 8px;
+}
+
+/* Base styling for the navigation buttons */
+.back-history-btn,
+.forward-history-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background-color: #f8fafc;
+    color: #0f172a;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    margin: 0;
+}
+
+/* Hover effects */
+.back-history-btn:hover,
+.forward-history-btn:hover {
+    background-color: #e2e8f0;
+}
+
+/* SVG icon colors */
+.back-history-btn svg,
+.forward-history-btn svg {
+    color: #0f172a;
 }
