@@ -1,4 +1,3 @@
-// GraphFilters.tsx
 import React from 'react';
 import './GraphFilters.css';
 import TimeLineFilter from './TimeLineFilter';
@@ -13,6 +12,8 @@ interface GraphFiltersProps {
     globalTimeBounds: { min: number; max: number } | null;
     timeRange: { start: number; end: number } | null;
     onTimeRangeChange: (start: number, end: number) => void;
+    canGoBack?: boolean;
+    onGoBack?: () => void;
 }
 
 const GraphFilters: React.FC<GraphFiltersProps> = ({
@@ -24,7 +25,9 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     nodes,
     globalTimeBounds,
     timeRange,
-    onTimeRangeChange
+    onTimeRangeChange,
+    canGoBack,
+    onGoBack
 }) => {
 
     const categories = [
@@ -41,6 +44,16 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     return (
         <div className="filters-wrapper">
             <div className="filter-chips-row">
+                {canGoBack && onGoBack && (
+                    <button className="back-history-btn" onClick={onGoBack} title="Go back to previous view">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="19" y1="12" x2="5" y2="12"></line>
+                            <polyline points="12 19 5 12 12 5"></polyline>
+                        </svg>
+                        Back
+                    </button>
+                )}
+
                 <span className="filter-label">Quick Filter:</span>
                 {categories.map(cat => {
                     const count = nodes.filter((n: any) => n.label?.toLowerCase() === cat.id).length;

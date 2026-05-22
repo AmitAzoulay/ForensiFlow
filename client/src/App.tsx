@@ -5,6 +5,13 @@ import AIAssistant from './components/AIAssistant';
 import GraphFilters from './components/GraphFilters';
 import './App.css';
 
+// ViewState interface defines what parameters we need to save in history
+interface ViewState {
+  searchQuery: string;
+  activeFilters: string[];
+  timeRange: { start: number; end: number } | null;
+}
+
 const extractTimestamp = (obj: any): number | null => {
   if (!obj) return null;
   if (obj.timestamp) return new Date(obj.timestamp).getTime();
@@ -23,7 +30,11 @@ function App() {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [globalTimeBounds, setGlobalTimeBounds] = useState<{ min: number; max: number } | null>(null);
   const [timeRange, setTimeRange] = useState<{ start: number; end: number } | null>(null);
+
   const [externalAIPrompt, setExternalAIPrompt] = useState<{ text: string; timestamp: number } | null>(null);
+
+  // State for tracking view history
+  const [viewHistory, setViewHistory] = useState<ViewState[]>([]);
 
   const handleDataLoaded = (data: any, newCaseId: any) => {
     setRawGraphData(data);
@@ -31,6 +42,7 @@ function App() {
     setSelectedLink(null);
     setSearchQuery('');
     setActiveFilters([]);
+    setViewHistory([]); // Clear history on new data load
   };
 
   const handleLinkClick = (link: any) => {
@@ -54,8 +66,25 @@ function App() {
   };
 
   const handleApplyNodeFilter = (node: any) => {
+    // Save current view state before applying new filter
+    setViewHistory(prev => [...prev, { searchQuery, activeFilters, timeRange }]);
+
     const nodeName = node.properties?.name || node.name || node.id;
     setSearchQuery(nodeName);
+  };
+
+  const handleGoBack = () => {
+    setViewHistory(prev => {
+      if (prev.length === 0) return prev;
+      const newHistory = [...prev];
+      const previousState = newHistory.pop();
+      if (previousState) {
+        setSearchQuery(previousState.searchQuery);
+        setActiveFilters(previousState.activeFilters);
+        setTimeRange(previousState.timeRange);
+      }
+      return newHistory;
+    });
   };
 
   useEffect(() => {
@@ -208,6 +237,8 @@ function App() {
       globalTimeBounds={globalTimeBounds}
       timeRange={timeRange}
       onTimeRangeChange={(start, end) => setTimeRange({ start, end })}
+      canGoBack={viewHistory.length > 0}
+      onGoBack={handleGoBack}
     />
   ) : null;
 
