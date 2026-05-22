@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
+import NodeContextMenu from './NodeContextMenu';
 import './GraphPanel.css';
 
 // ==========================================
@@ -47,16 +48,13 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
     }
 
-    // ציור השם - מופיע רק בזום מסוים ומותאם בגודלו
     if (globalScale > 0.8) {
-        // פונט שגדל עם הזום אבל נשאר בטווח הגיוני
         const fontSize = Math.min(14, Math.max(10, 12 / globalScale));
         ctx.font = `500 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
 
         const x = node.x;
-        // מיקום גמיש מתחת לאייקון
         const y = node.y + iconSize / 2 + 2;
 
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
@@ -67,7 +65,6 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.fillText(label, x, y);
     }
 };
-
 
 const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const startNode = link.source;
@@ -121,7 +118,6 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     ctx.closePath();
     ctx.fill();
 
-    // Hide labels when zoomed out too far
     if (globalScale >= 0.8) {
         const label = link.type || link.label || "";
         if (!label) return;
@@ -162,11 +158,21 @@ interface GraphPanelProps {
     graphData: { nodes: any[], links: any[] };
     onLinkClick: (link: any) => void;
     onDataLoaded: (data: any, caseId: string) => void;
+    onSendNodeToAI: (node: any) => void;
+    onApplyNodeFilter: (node: any) => void;
     children?: React.ReactNode;
     filtersComponent?: React.ReactNode;
 }
 
-const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataLoaded, children, filtersComponent }) => {
+const GraphPanel: React.FC<GraphPanelProps> = ({
+    graphData,
+    onLinkClick,
+    onDataLoaded,
+    onSendNodeToAI,
+    onApplyNodeFilter,
+    children,
+    filtersComponent
+}) => {
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
     const [mode, setMode] = useState<'new' | 'existing'>('new');
@@ -175,6 +181,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
     const [newInvestigationName, setNewInvestigationName] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: any } | null>(null);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
@@ -253,9 +260,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
 
     useEffect(() => {
         if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
-            // Increased repulsion to push nodes further apart
             graphRef.current.d3Force('charge').strength(-300);
-            // Increased link distance to give text labels more room
             graphRef.current.d3Force('link').distance(350);
             graphRef.current.d3Force('center').strength(0.01);
             graphRef.current.d3ReheatSimulation();
@@ -300,6 +305,13 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
         } catch (error) {
             console.error("Failed to delete investigation:", error);
             alert("Failed to delete the investigation.");
+        }
+    };
+
+    const handlePointerHover = (element: any) => {
+        const canvas = containerRef.current?.querySelector('canvas');
+        if (canvas) {
+            canvas.style.cursor = element ? 'pointer' : 'default';
         }
     };
 
@@ -386,6 +398,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                         className="canvas-wrapper"
                         ref={containerRef}
                         style={{ flex: 1, position: 'relative', minHeight: 0, minWidth: 0, overflow: 'hidden', width: '100%', height: '100%' }}
+                        onContextMenu={(e) => e.preventDefault()}
                     >
                         {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
                             <ForceGraph2D
@@ -393,7 +406,39 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                                 width={dimensions.width}
                                 height={dimensions.height}
                                 graphData={graphDataWithCurvature}
-                                onLinkClick={onLinkClick}
+                                onNodeHover={handlePointerHover}
+                                onLinkHover={handlePointerHover}
+                                nodePointerAreaPaint={(node: any, color: string, ctx: any) => {
+                                    const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
+                                    ctx.fillStyle = color;
+                                    ctx.beginPath();
+                                    ctx.arc(node.x, node.y, iconSize / 2, 0, 2 * Math.PI, false);
+                                    ctx.fill();
+                                }}
+                                onLinkClick={(link) => {
+                                    setContextMenu(null);
+                                    onLinkClick(link);
+                                }}
+                                onBackgroundClick={() => {
+                                    setContextMenu(null);
+                                }}
+                                onBackgroundRightClick={() => {
+                                    setContextMenu(null);
+                                }}
+                                onNodeClick={() => {
+                                    setContextMenu(null);
+                                }}
+                                onNodeRightClick={(node, event) => {
+                                    event.preventDefault();
+                                    if (containerRef.current) {
+                                        const rect = containerRef.current.getBoundingClientRect();
+                                        setContextMenu({
+                                            x: event.clientX - rect.left,
+                                            y: event.clientY - rect.top,
+                                            node
+                                        });
+                                    }
+                                }}
                                 cooldownTicks={100}
                                 nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
                                 linkCanvasObjectMode={() => 'replace'}
@@ -403,6 +448,17 @@ const GraphPanel: React.FC<GraphPanelProps> = ({ graphData, onLinkClick, onDataL
                             <div className="placeholder">
                                 {status === 'uploading' ? 'Processing data...' : 'Select an investigation or upload an EVTX file to begin.'}
                             </div>
+                        )}
+
+                        {contextMenu && (
+                            <NodeContextMenu
+                                x={contextMenu.x}
+                                y={contextMenu.y}
+                                node={contextMenu.node}
+                                onClose={() => setContextMenu(null)}
+                                onSendToAI={onSendNodeToAI}
+                                onApplyFilter={onApplyNodeFilter}
+                            />
                         )}
                     </div>
                 </div>

@@ -5,9 +5,10 @@ import './AIAssistant.css';
 
 interface AIAssistantProps {
     caseId: string | null;
+    externalPrompt?: { text: string; timestamp: number } | null;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ caseId }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => {
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [inputValue, setInputValue] = useState<string>('');
@@ -29,6 +30,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId }) => {
             handleSendMessage("Provide a single-paragraph forensic summary of this investigation.");
         }
     }, [isOpen, caseId, messages.length]);
+
+    useEffect(() => {
+        if (externalPrompt && externalPrompt.text && caseId) {
+            setIsOpen(true);
+            handleSendMessage(externalPrompt.text);
+        }
+    }, [externalPrompt, caseId]);
 
     const handleSendMessage = async (textOverride?: string) => {
         const textToProcess = textOverride || inputValue;
