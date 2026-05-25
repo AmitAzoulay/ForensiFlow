@@ -2,6 +2,7 @@
 
 ForensiFlow is a powerful, interactive visual forensics tool designed to analyze Windows Event Logs (`.evtx`). By parsing raw event data and mapping the relationships into a Neo4j graph database, ForensiFlow allows cybersecurity analysts, security researchers, and incident responders to visually track Windows event logs.
 
+![](assets/illu.png)
 
 ## Tech Stack
 
