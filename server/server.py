@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 
 from database import Neo4jClient
 from services.ai_agent import generate_forensic_response
-# NOTE: We will extract the EVTX logic into services/evtx_parser.py in the next step
 from services.evtx_parser import parse_and_store_evtx
 
 load_dotenv()
@@ -24,7 +23,6 @@ CORS(app)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Initialize database client
 db_client = Neo4jClient(
     uri=os.getenv("NEO4J_URI"),
     user=os.getenv("NEO4J_USER"),
@@ -33,7 +31,6 @@ db_client = Neo4jClient(
 
 @app.route('/api/investigations', methods=['GET'])
 def get_investigations():
-    """Endpoint to fetch all available investigation cases."""
     try:
         investigations = db_client.get_all_investigations()
         return jsonify(investigations), 200
@@ -42,7 +39,6 @@ def get_investigations():
 
 @app.route('/api/graph-data', methods=['GET'])
 def get_graph_data():
-    """Endpoint to fetch node and link data for the UI graph."""
     case_id = request.args.get('case_id')
     if not case_id:
         return jsonify({"error": "Missing case_id parameter"}), 400
@@ -87,7 +83,6 @@ def upload_and_parse_evtx():
         
 @app.route('/api/ai-chat', methods=['POST'])
 def process_ai_chat():
-    """Endpoint to handle AI assistant interactions."""
     data = request.json
     case_id = data.get('case_id')
     chat_history = data.get('history', [])
@@ -115,6 +110,23 @@ def delete_investigation(case_id):
     except Exception as e:
         logger.error(f"Failed to delete investigation: {e}")
         return jsonify({"error": "Failed to delete investigation"}), 500
+
+@app.route('/api/save-edited', methods=['POST'])
+def save_edited_investigation():
+    data = request.json
+    original_case_id = data.get('old_case_id')
+    new_name = data.get('new_name')
+    nodes = data.get('nodes')
+    links = data.get('links')
+    
+    new_case_id = str(uuid.uuid4())
+    
+    try:
+        db_client.save_edited_graph(original_case_id, new_case_id, new_name, nodes, links)
+        return jsonify({"status": "success", "case_id": new_case_id}), 200
+    except Exception as e:
+        logger.error(f"Save edited failed: {e}")
+        return jsonify({"error": "Failed to save edited investigation"}), 500
 
 if __name__ == '__main__':
     logger.info("ForensiFlow API Server starting on port 8000...")

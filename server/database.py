@@ -5,7 +5,6 @@ logger = logging.getLogger(__name__)
 
 class Neo4jClient:
     def __init__(self, uri, user, password):
-        """Initializes the Neo4j database driver."""
         try:
             self.driver = GraphDatabase.driver(uri, auth=(user, password))
             logger.info("Successfully connected to Neo4j database.")
@@ -14,12 +13,10 @@ class Neo4jClient:
             raise
 
     def close(self):
-        """Closes the database connection."""
         if self.driver:
             self.driver.close()
 
     def get_all_investigations(self):
-        """Retrieves a list of all historical investigations."""
         query = """
         MATCH (i:Investigation) 
         RETURN i.case_id AS case_id, i.name AS name 
@@ -34,7 +31,6 @@ class Neo4jClient:
             raise
 
     def get_case_graph(self, case_id):
-        """Retrieves nodes and relationships for a specific case visualization."""
         query = """
         MATCH (n)-[r]->(m) 
         WHERE n.case_id = $case_id 
@@ -56,7 +52,8 @@ class Neo4jClient:
                         nodes_dict[source_id] = {
                             "id": source_id, 
                             "label": list(node_source.labels)[0], 
-                            "properties": dict(node_source)
+                            "properties": dict(node_source),
+                            "is_red": dict(node_source).get("is_red", False)
                         }
                     
                     target_id = node_target.element_id
@@ -64,14 +61,17 @@ class Neo4jClient:
                         nodes_dict[target_id] = {
                             "id": target_id, 
                             "label": list(node_target.labels)[0], 
-                            "properties": dict(node_target)
+                            "properties": dict(node_target),
+                            "is_red": dict(node_target).get("is_red", False)
                         }
                         
                     links.append({
+                        "id": rel.element_id,
                         "source": source_id, 
                         "target": target_id, 
                         "type": rel.type, 
-                        "details": dict(rel)
+                        "details": dict(rel),
+                        "is_red": dict(rel).get("is_red", False)
                     })
             return {"nodes": list(nodes_dict.values()), "links": links}
         except Exception as e:
@@ -79,7 +79,6 @@ class Neo4jClient:
             raise
 
     def get_investigation_timeline(self, case_id, limit=500):
-        """Retrieves a chronological timeline of events for AI analysis."""
         query = """
         MATCH (src)-[r]->(dst)
         WHERE src.case_id = $case_id
@@ -100,6 +99,7 @@ class Neo4jClient:
         except Exception as e:
             logger.error(f"Database error during get_investigation_timeline: {e}")
             raise
+
     def delete_investigation(self, case_id):
         query = """
         MATCH (n {case_id: $case_id})
@@ -110,4 +110,53 @@ class Neo4jClient:
                 session.run(query, case_id=case_id)
         except Exception as e:
             logger.error(f"Database error during delete_investigation: {e}")
+            raise
+
+    def save_edited_graph(self, original_case_id, new_case_id, new_name, nodes, links):
+        query_inv = "CREATE (i:Investigation {case_id: $new_case_id, name: $new_name, created_at: timestamp()})"
+        try:
+            with self.driver.session() as session:
+                tx = session.begin_transaction()
+                tx.run(query_inv, new_case_id=new_case_id, new_name=new_name)
+
+                for n in nodes:
+                    props = n.get("properties", {})
+                    entity_id = n.get("id")
+                    is_red = n.get("is_red", False)
+                    label = n.get("label", "Unknown")
+                    name_val = props.get("name", entity_id)
+
+                    q_node = f"""
+                    CREATE (n:{label} {{case_id: $case_id, entity_id: $entity_id, name: $name, is_red: $is_red}})
+                    """
+                    tx.run(q_node, case_id=new_case_id, entity_id=entity_id, name=name_val, is_red=is_red)
+
+                    set_clause = ", ".join([f"n.{k} = ${k}" for k in props.keys() if k not in ["case_id", "entity_id", "name", "is_red"]])
+                    if set_clause:
+                        tx.run(f"MATCH (n {{case_id: $case_id, entity_id: $entity_id}}) SET {set_clause}", case_id=new_case_id, entity_id=entity_id, **props)
+
+                for l in links:
+                    source_id = l.get("source")
+                    target_id = l.get("target")
+                    rel_type = l.get("type", "RELATED_TO")
+                    details = l.get("details", {})
+                    is_red = l.get("is_red", False)
+
+                    q_link = f"""
+                    MATCH (s {{case_id: $case_id, entity_id: $source_id}})
+                    MATCH (t {{case_id: $case_id, entity_id: $target_id}})
+                    CREATE (s)-[r:{rel_type} {{is_red: $is_red}}]->(t)
+                    """
+                    tx.run(q_link, case_id=new_case_id, source_id=source_id, target_id=target_id, is_red=is_red)
+                    
+                    set_clause = ", ".join([f"r.{k} = ${k}" for k in details.keys() if k not in ["is_red"]])
+                    if set_clause:
+                        tx.run(f"""
+                        MATCH (s {{case_id: $case_id, entity_id: $source_id}})-[r:{rel_type}]->(t {{case_id: $case_id, entity_id: $target_id}})
+                        SET {set_clause}
+                        """, case_id=new_case_id, source_id=source_id, target_id=target_id, **details)
+                
+                tx.commit()
+        except Exception as e:
+            logger.error(f"Database error during save_edited_graph: {e}")
             raise
