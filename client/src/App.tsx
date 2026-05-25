@@ -47,6 +47,10 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const [isPlaybackMode, setIsPlaybackMode] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackIndex, setPlaybackIndex] = useState(0);
+
   const handleDataLoaded = (data: any, newCaseId: any) => {
     setRawGraphData(data);
     setCaseId(newCaseId);
@@ -55,6 +59,9 @@ function App() {
     setActiveFilters([]);
     setPastHistory([]);
     setFutureHistory([]);
+    setIsPlaybackMode(false);
+    setIsPlaying(false);
+    setPlaybackIndex(0);
     setEdits({
       redNodes: new Set(),
       redLinks: new Set(),
@@ -332,7 +339,70 @@ function App() {
     return { nodes: finalNodes, links: finalLinks };
   }, [rawGraphData, searchQuery, activeFilters, timeRange, globalTimeBounds, edits]);
 
-  const filtersUI = rawGraphData.nodes.length > 0 ? (
+  const playbackSequence = useMemo(() => {
+    const redLinks = filteredGraphData.links.filter((l: any) => l.is_red);
+    const validLinks = redLinks.filter((l: any) => extractTimestamp(l) !== null);
+    validLinks.sort((a: any, b: any) => extractTimestamp(a)! - extractTimestamp(b)!);
+    return validLinks;
+  }, [filteredGraphData]);
+
+  const { activePlaybackNodeIds, activePlaybackLinkIds } = useMemo(() => {
+    if (!isPlaybackMode) {
+      return { activePlaybackNodeIds: undefined, activePlaybackLinkIds: undefined };
+    }
+
+    const activeNodes = new Set<string>();
+    const activeLinks = new Set<string>();
+
+    const visibleLinks = playbackSequence.slice(0, playbackIndex);
+    visibleLinks.forEach((l: any) => {
+      activeLinks.add(l.id);
+      activeNodes.add(typeof l.source === 'object' ? l.source.id : l.source);
+      activeNodes.add(typeof l.target === 'object' ? l.target.id : l.target);
+    });
+
+    const allRedNodes = filteredGraphData.nodes.filter((n: any) => n.is_red);
+    const redLinkConnectedNodeIds = new Set();
+    playbackSequence.forEach((l: any) => {
+      redLinkConnectedNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
+      redLinkConnectedNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
+    });
+
+    const isolatedRedNodes = allRedNodes.filter((n: any) => !redLinkConnectedNodeIds.has(n.id));
+    isolatedRedNodes.forEach((n: any) => activeNodes.add(n.id));
+
+    return { activePlaybackNodeIds: activeNodes, activePlaybackLinkIds: activeLinks };
+  }, [isPlaybackMode, playbackSequence, playbackIndex, filteredGraphData.nodes]);
+
+  useEffect(() => {
+    let timer: any;
+    if (isPlaybackMode && isPlaying) {
+      timer = setInterval(() => {
+        setPlaybackIndex(prev => {
+          if (prev >= playbackSequence.length) {
+            setIsPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1500);
+    }
+    return () => clearInterval(timer);
+  }, [isPlaybackMode, isPlaying, playbackSequence.length]);
+
+  const handleStartPlayback = () => {
+    setIsPlaybackMode(true);
+    setPlaybackIndex(0);
+    setIsPlaying(true);
+  };
+
+  const handleExitPlayback = () => {
+    setIsPlaybackMode(false);
+    setIsPlaying(false);
+    setPlaybackIndex(0);
+  };
+
+  const filtersUI = rawGraphData.nodes.length > 0 && !isPlaybackMode ? (
     <GraphFilters
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
@@ -366,14 +436,65 @@ function App() {
               <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
             </svg>
             <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-            uploading investigation...
+            החקירה מועלת...
           </div>
         </div>
       )}
+
+      {isPlaybackMode && (
+        <div style={{ position: 'fixed', bottom: '40px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(30, 41, 59, 0.95)', padding: '20px 30px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '15px', zIndex: 1000, boxShadow: '0 10px 30px rgba(0,0,0,0.4)', color: 'white', minWidth: '450px', border: '1px solid #334155' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444', animation: isPlaying ? 'pulse 1.5s infinite' : 'none' }}></div>
+              <span style={{ fontWeight: '600', letterSpacing: '0.5px' }}>Attack Path Analysis</span>
+              <style>{`@keyframes pulse { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }`}</style>
+            </div>
+            <button onClick={handleExitPlayback} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Exit Player">✖</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginTop: '5px' }}>
+            <button onClick={() => { setPlaybackIndex(0); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Restart">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+            </button>
+            <button onClick={() => { setPlaybackIndex(p => Math.max(0, p - 1)); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Previous Event">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="15 18 9 12 15 6 15 18"></polygon></svg>
+            </button>
+            <button onClick={() => setIsPlaying(!isPlaying)} style={{ background: isPlaying ? '#f59e0b' : '#3b82f6', border: 'none', color: 'white', width: '48px', height: '48px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }} title={isPlaying ? 'Pause' : 'Play'}>
+              {isPlaying ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: '4px' }}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              )}
+            </button>
+            <button onClick={() => { setPlaybackIndex(p => Math.min(playbackSequence.length, p + 1)); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Next Event">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="9 18 15 12 9 6 9 18"></polygon></svg>
+            </button>
+            <button onClick={() => { setPlaybackIndex(playbackSequence.length); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Skip to End">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+            </button>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={playbackSequence.length}
+            value={playbackIndex}
+            onChange={(e) => { setPlaybackIndex(Number(e.target.value)); setIsPlaying(false); }}
+            style={{ width: '100%', cursor: 'pointer', accentColor: '#ef4444' }}
+          />
+          <div style={{ textAlign: 'center', fontSize: '13px', color: '#cbd5e1' }}>
+            Progress: <span style={{ color: 'white', fontWeight: '500' }}>{playbackIndex}</span> / {playbackSequence.length} Events Revealed
+          </div>
+        </div>
+      )}
+
       <GraphPanel
         graphData={filteredGraphData}
         caseId={caseId}
         refreshKey={refreshKey}
+        isPlaybackMode={isPlaybackMode}
+        activePlaybackNodeIds={activePlaybackNodeIds}
+        activePlaybackLinkIds={activePlaybackLinkIds}
+        hasRedItems={playbackSequence.length > 0}
+        onStartPlayback={handleStartPlayback}
         onLinkClick={handleLinkClick}
         onDataLoaded={handleDataLoaded}
         filtersComponent={filtersUI}

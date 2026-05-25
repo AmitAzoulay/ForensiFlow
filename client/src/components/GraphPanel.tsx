@@ -25,7 +25,19 @@ const ICONS_SVG = {
     GROUP: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%236366f1"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
 };
 
-const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any, selectedNodes: any[]) => {
+const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any, selectedNodes: any[], activePlaybackNodeIds?: Set<string>) => {
+    const isPlayback = activePlaybackNodeIds !== undefined;
+    const isVisiblePlayback = isPlayback ? activePlaybackNodeIds.has(node.id) : true;
+
+    ctx.save();
+
+    if (isPlayback && !isVisiblePlayback) {
+        ctx.globalAlpha = 0.15;
+    } else if (isPlayback && isVisiblePlayback) {
+        ctx.shadowColor = '#ef4444';
+        ctx.shadowBlur = 15;
+    }
+
     const rawLabel = node.properties?.name || node.name || node.id;
     const label = (rawLabel.length > 20) ? rawLabel.substring(0, 12) + "..." : rawLabel;
     const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
@@ -38,7 +50,7 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.lineWidth = 2 / globalScale;
         ctx.strokeStyle = '#eab308';
         ctx.stroke();
-    } else if (node.is_red) {
+    } else if (node.is_red && (!isPlayback || isVisiblePlayback)) {
         ctx.beginPath();
         ctx.arc(node.x, node.y, iconSize / 1.5, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
@@ -60,12 +72,14 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 3 / globalScale;
         ctx.strokeText(label, x, y);
-        ctx.fillStyle = node.is_red ? '#ef4444' : '#1e293b';
+        ctx.fillStyle = (node.is_red && (!isPlayback || isVisiblePlayback)) ? '#ef4444' : '#1e293b';
         ctx.fillText(label, x, y);
     }
+
+    ctx.restore();
 };
 
-const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, globalScale: number, activePlaybackLinkIds?: Set<string>) => {
     const startNode = link.source;
     const endNode = link.target;
     if (!startNode || !endNode || typeof startNode !== 'object' || typeof endNode !== 'object') return;
@@ -74,6 +88,18 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     const deltaY = endNode.y - startNode.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     if (distance === 0) return;
+
+    const isPlayback = activePlaybackLinkIds !== undefined;
+    const isVisiblePlayback = isPlayback ? activePlaybackLinkIds.has(link.id) : true;
+
+    ctx.save();
+
+    if (isPlayback && !isVisiblePlayback) {
+        ctx.globalAlpha = 0.05;
+    } else if (isPlayback && isVisiblePlayback) {
+        ctx.shadowColor = '#ef4444';
+        ctx.shadowBlur = 8;
+    }
 
     const totalOffset = GRAPH_SETTINGS.NODE_RADIUS + GRAPH_SETTINGS.NODE_MARGIN;
     const normalVector = { x: -deltaY / distance, y: deltaX / distance };
@@ -85,7 +111,10 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
 
     const distToControlEnd = Math.sqrt(Math.pow(endNode.x - controlPoint.x, 2) + Math.pow(endNode.y - controlPoint.y, 2));
     const distToControlStart = Math.sqrt(Math.pow(startNode.x - controlPoint.x, 2) + Math.pow(startNode.y - controlPoint.y, 2));
-    if (distToControlEnd === 0 || distToControlStart === 0) return;
+    if (distToControlEnd === 0 || distToControlStart === 0) {
+        ctx.restore();
+        return;
+    }
 
     const targetTipX = endNode.x - ((endNode.x - controlPoint.x) / distToControlEnd) * totalOffset;
     const targetTipY = endNode.y - ((endNode.y - controlPoint.y) / distToControlEnd) * totalOffset;
@@ -119,7 +148,10 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
 
     if (globalScale >= 0.8) {
         const label = link.type || link.label || "";
-        if (!label) return;
+        if (!label) {
+            ctx.restore();
+            return;
+        }
         const textPos = {
             x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
             y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
@@ -135,7 +167,6 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
         const textWidth = ctx.measureText(label).width;
         const bgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.6);
 
-        ctx.save();
         ctx.translate(textPos.x, textPos.y);
         ctx.rotate(textAngle);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
@@ -144,14 +175,20 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
         ctx.textBaseline = 'middle';
         ctx.fillStyle = link.is_red ? '#ef4444' : '#475569';
         ctx.fillText(label, 0, -(fontSize * 0.4));
-        ctx.restore();
     }
+
+    ctx.restore();
 };
 
 interface GraphPanelProps {
     graphData: { nodes: any[], links: any[] };
     caseId?: string | null;
     refreshKey?: number;
+    isPlaybackMode?: boolean;
+    activePlaybackNodeIds?: Set<string>;
+    activePlaybackLinkIds?: Set<string>;
+    hasRedItems?: boolean;
+    onStartPlayback?: () => void;
     onLinkClick: (link: any) => void;
     onDataLoaded: (data: any, caseId: string | null) => void;
     onSendNodeToAI: (node: any) => void;
@@ -166,6 +203,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     graphData,
     caseId,
     refreshKey = 0,
+    isPlaybackMode = false,
+    activePlaybackNodeIds,
+    activePlaybackLinkIds,
+    hasRedItems = false,
+    onStartPlayback,
     onLinkClick,
     onDataLoaded,
     onSendNodeToAI,
@@ -324,7 +366,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
         hoveredItemRef.current = node;
         const canvas = containerRef.current?.querySelector('canvas');
         if (canvas) {
-            canvas.style.cursor = node ? 'pointer' : (isLasso ? 'crosshair' : 'default');
+            if (isPlaybackMode) {
+                canvas.style.cursor = 'default';
+            } else {
+                canvas.style.cursor = node ? 'pointer' : (isLasso ? 'crosshair' : 'default');
+            }
         }
     };
 
@@ -332,12 +378,16 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
         hoveredItemRef.current = link;
         const canvas = containerRef.current?.querySelector('canvas');
         if (canvas) {
-            canvas.style.cursor = link ? 'pointer' : (isLasso ? 'crosshair' : 'default');
+            if (isPlaybackMode) {
+                canvas.style.cursor = 'default';
+            } else {
+                canvas.style.cursor = link ? 'pointer' : (isLasso ? 'crosshair' : 'default');
+            }
         }
     };
 
     const handleContainerMouseDown = (e: React.MouseEvent) => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || isPlaybackMode) return;
         if (hoveredItemRef.current) return;
 
         const rect = containerRef.current?.getBoundingClientRect();
@@ -358,6 +408,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     };
 
     const handleContainerMouseMove = (e: React.MouseEvent) => {
+        if (isPlaybackMode) return;
         if (isLasso) {
             const rect = containerRef.current?.getBoundingClientRect();
             if (!rect) return;
@@ -373,6 +424,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     };
 
     const handleContainerMouseUp = () => {
+        if (isPlaybackMode) return;
         clearTimeout(pressTimer.current);
         initialClick.current = null;
         if (isLasso) {
@@ -411,11 +463,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                     <h2 className="toolbar-title">ForensiFlow</h2>
                     <div className="mode-toggle">
                         <label className={mode === 'new' ? 'active' : ''}>
-                            <input type="radio" checked={mode === 'new'} onChange={() => setMode('new')} />
+                            <input type="radio" checked={mode === 'new'} onChange={() => setMode('new')} disabled={isPlaybackMode} />
                             New Investigation
                         </label>
                         <label className={mode === 'existing' ? 'active' : ''}>
-                            <input type="radio" checked={mode === 'existing'} onChange={() => setMode('existing')} />
+                            <input type="radio" checked={mode === 'existing'} onChange={() => setMode('existing')} disabled={isPlaybackMode} />
                             Open Existing
                         </label>
                     </div>
@@ -429,14 +481,16 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 placeholder="Investigation Name"
                                 value={newInvestigationName}
                                 onChange={(e) => setNewInvestigationName(e.target.value)}
+                                disabled={isPlaybackMode}
                             />
                             <input
                                 type="file"
                                 className="modern-file-input"
                                 accept=".evtx"
                                 onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])}
+                                disabled={isPlaybackMode}
                             />
-                            <button className="btn-primary" onClick={processNewInvestigation} disabled={!selectedFile || status === 'uploading'}>
+                            <button className="btn-primary" onClick={processNewInvestigation} disabled={!selectedFile || status === 'uploading' || isPlaybackMode}>
                                 {status === 'uploading' ? 'Analyzing...' : 'Analyze'}
                             </button>
                         </>
@@ -447,6 +501,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     className="modern-select"
                                     value={selectedCaseId}
                                     onChange={(e) => setSelectedCaseId(e.target.value)}
+                                    disabled={isPlaybackMode}
                                 >
                                     <option value="" disabled>Select an Investigation...</option>
                                     {investigationsList.map(inv => (
@@ -457,8 +512,8 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 </select>
                                 <button
                                     onClick={() => handleDeleteInvestigation(selectedCaseId)}
-                                    disabled={!selectedCaseId}
-                                    style={{ background: 'none', border: 'none', cursor: selectedCaseId ? 'pointer' : 'default', padding: '5px', opacity: selectedCaseId ? 1 : 0.5 }}
+                                    disabled={!selectedCaseId || isPlaybackMode}
+                                    style={{ background: 'none', border: 'none', cursor: selectedCaseId && !isPlaybackMode ? 'pointer' : 'default', padding: '5px', opacity: selectedCaseId && !isPlaybackMode ? 1 : 0.5 }}
                                     title="Delete Investigation"
                                 >
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
@@ -467,11 +522,17 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     </svg>
                                 </button>
                             </div>
-                            <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading'}>
+                            <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
+                            {caseId && !isPlaybackMode && hasRedItems && (
+                                <button className="btn-primary" onClick={onStartPlayback} style={{ marginLeft: '10px', background: 'linear-gradient(to right, #ef4444, #b91c1c)', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                    Play Attack Path
+                                </button>
+                            )}
                             {caseId && (
-                                <button className="btn-secondary" onClick={triggerSave} style={{ marginLeft: '10px' }}>
+                                <button className="btn-secondary" onClick={triggerSave} disabled={isPlaybackMode} style={{ marginLeft: '10px' }}>
                                     Save Edited
                                 </button>
                             )}
@@ -502,7 +563,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 height={dimensions.height}
                                 graphData={graphDataWithCurvature}
                                 enableZoomPanInteraction={!isLasso}
-                                enableNodeDrag={!isLasso}
+                                enableNodeDrag={!isLasso && !isPlaybackMode}
                                 onNodeHover={handleNodeHover}
                                 onLinkHover={handleLinkHover}
                                 nodePointerAreaPaint={(node: any, color: string, ctx: any) => {
@@ -513,11 +574,13 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     ctx.fill();
                                 }}
                                 onLinkClick={(link) => {
+                                    if (isPlaybackMode) return;
                                     setContextMenu(null);
                                     setSelectedGroup({ nodes: [], links: [] });
                                     onLinkClick(link);
                                 }}
                                 onBackgroundClick={() => {
+                                    if (isPlaybackMode) return;
                                     setIsLasso(false);
                                     const canvas = containerRef.current?.querySelector('canvas');
                                     if (canvas) canvas.style.cursor = 'default';
@@ -525,6 +588,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     setSelectedGroup({ nodes: [], links: [] });
                                 }}
                                 onBackgroundRightClick={(event) => {
+                                    if (isPlaybackMode) return;
                                     if (selectedGroup.nodes.length > 0 && containerRef.current) {
                                         const rect = containerRef.current.getBoundingClientRect();
                                         setContextMenu({
@@ -539,11 +603,13 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     }
                                 }}
                                 onNodeClick={() => {
+                                    if (isPlaybackMode) return;
                                     setContextMenu(null);
                                     setSelectedGroup({ nodes: [], links: [] });
                                 }}
                                 onNodeRightClick={(node, event) => {
                                     event.preventDefault();
+                                    if (isPlaybackMode) return;
                                     if (containerRef.current) {
                                         const rect = containerRef.current.getBoundingClientRect();
                                         const isGroup = selectedGroup.nodes.some(n => n.id === node.id);
@@ -557,6 +623,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     }
                                 }}
                                 onLinkRightClick={(link, event) => {
+                                    if (isPlaybackMode) return;
                                     if (containerRef.current) {
                                         const rect = containerRef.current.getBoundingClientRect();
                                         setContextMenu({
@@ -569,9 +636,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     }
                                 }}
                                 cooldownTicks={100}
-                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons, selectedGroup.nodes)}
+                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons, selectedGroup.nodes, activePlaybackNodeIds)}
                                 linkCanvasObjectMode={() => 'replace'}
-                                linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
+                                linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale, activePlaybackLinkIds)}
                             />
                         ) : (
                             <div className="placeholder">
