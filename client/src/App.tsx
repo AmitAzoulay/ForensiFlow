@@ -436,7 +436,7 @@ function App() {
               <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
             </svg>
             <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-            החקירה מועלת...
+            uploading investigation...
           </div>
         </div>
       )}
