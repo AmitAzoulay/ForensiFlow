@@ -23,7 +23,7 @@ const extractTimestamp = (obj: any): number | null => {
 function App() {
   const [rawGraphData, setRawGraphData] = useState({ nodes: [], links: [] });
   const [selectedLink, setSelectedLink] = useState(null);
-  const [caseId, setCaseId] = useState(null);
+  const [caseId, setCaseId] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
@@ -35,6 +35,18 @@ function App() {
   const [pastHistory, setPastHistory] = useState<ViewState[]>([]);
   const [futureHistory, setFutureHistory] = useState<ViewState[]>([]);
 
+  const [edits, setEdits] = useState({
+    redNodes: new Set<string>(),
+    redLinks: new Set<string>(),
+    deletedNodes: new Set<string>(),
+    deletedLinks: new Set<string>(),
+    unredNodes: new Set<string>(),
+    unredLinks: new Set<string>()
+  });
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const handleDataLoaded = (data: any, newCaseId: any) => {
     setRawGraphData(data);
     setCaseId(newCaseId);
@@ -43,6 +55,14 @@ function App() {
     setActiveFilters([]);
     setPastHistory([]);
     setFutureHistory([]);
+    setEdits({
+      redNodes: new Set(),
+      redLinks: new Set(),
+      deletedNodes: new Set(),
+      deletedLinks: new Set(),
+      unredNodes: new Set(),
+      unredLinks: new Set()
+    });
   };
 
   const handleLinkClick = (link: any) => {
@@ -68,18 +88,98 @@ function App() {
   const handleApplyNodeFilter = (node: any) => {
     setPastHistory(prev => [...prev, { searchQuery, activeFilters, timeRange }]);
     setFutureHistory([]);
-
     const nodeName = node.properties?.name || node.name || node.id;
     setSearchQuery(nodeName);
   };
 
+  const handleApplyEdit = (action: 'red' | 'unred' | 'delete', targetType: 'node' | 'link' | 'group', targetData: any) => {
+    setEdits(prev => {
+      const newEdits = {
+        redNodes: new Set(prev.redNodes),
+        redLinks: new Set(prev.redLinks),
+        deletedNodes: new Set(prev.deletedNodes),
+        deletedLinks: new Set(prev.deletedLinks),
+        unredNodes: new Set(prev.unredNodes),
+        unredLinks: new Set(prev.unredLinks)
+      };
+
+      const processItems = (nodes: any[], links: any[], act: string) => {
+        nodes.forEach(n => {
+          const id = n.id || n;
+          if (act === 'delete') newEdits.deletedNodes.add(id);
+          else if (act === 'red') {
+            newEdits.redNodes.add(id);
+            newEdits.unredNodes.delete(id);
+          } else if (act === 'unred') {
+            newEdits.unredNodes.add(id);
+            newEdits.redNodes.delete(id);
+          }
+        });
+        links.forEach(l => {
+          const id = l.id || l;
+          if (act === 'delete') newEdits.deletedLinks.add(id);
+          else if (act === 'red') {
+            newEdits.redLinks.add(id);
+            newEdits.unredLinks.delete(id);
+          } else if (act === 'unred') {
+            newEdits.unredLinks.add(id);
+            newEdits.redLinks.delete(id);
+          }
+        });
+      };
+
+      if (targetType === 'node') {
+        const connectedLinks = rawGraphData.links.filter((l: any) =>
+          (l.source.id || l.source) === targetData.id ||
+          (l.target.id || l.target) === targetData.id
+        );
+        processItems([targetData], connectedLinks, action);
+      } else if (targetType === 'link') {
+        if (action === 'delete') {
+          processItems([], [targetData], 'delete');
+        } else {
+          processItems([targetData.source, targetData.target], [targetData], action);
+        }
+      } else if (targetType === 'group') {
+        const groupNodeIds = new Set(targetData.nodes.map((n: any) => n.id));
+        const connectedLinks = rawGraphData.links.filter((l: any) =>
+          groupNodeIds.has(l.source.id || l.source) ||
+          groupNodeIds.has(l.target.id || l.target)
+        );
+        processItems(targetData.nodes, connectedLinks, action);
+      }
+
+      return newEdits;
+    });
+  };
+
+  const handleSaveEdited = async (newName: string) => {
+    setIsSaving(true);
+    const nodesToSave = filteredGraphData.nodes.map((n: any) => ({ id: n.id, label: n.label, properties: n.properties, is_red: n.is_red }));
+    const linksToSave = filteredGraphData.links.map((l: any) => ({ id: l.id, source: l.source.id, target: l.target.id, type: l.type, details: l.details, is_red: l.is_red }));
+
+    try {
+      const response = await fetch('http://localhost:8000/api/save-edited', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_case_id: caseId, new_name: newName + ' (edited)', nodes: nodesToSave, links: linksToSave })
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        setRefreshKey(prev => prev + 1);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleGoBack = () => {
     if (pastHistory.length === 0) return;
-
     const current = { searchQuery, activeFilters, timeRange };
     const newPast = [...pastHistory];
     const previous = newPast.pop();
-
     if (previous) {
       setFutureHistory(prev => [current, ...prev]);
       setSearchQuery(previous.searchQuery);
@@ -91,11 +191,9 @@ function App() {
 
   const handleGoForward = () => {
     if (futureHistory.length === 0) return;
-
     const current = { searchQuery, activeFilters, timeRange };
     const newFuture = [...futureHistory];
     const next = newFuture.shift();
-
     if (next) {
       setPastHistory(prev => [...prev, current]);
       setSearchQuery(next.searchQuery);
@@ -111,10 +209,8 @@ function App() {
       setTimeRange(null);
       return;
     }
-
     let min = Infinity;
     let max = -Infinity;
-
     rawGraphData.links.forEach((link: any) => {
       const t = extractTimestamp(link);
       if (t) {
@@ -122,7 +218,6 @@ function App() {
         if (t > max) max = t;
       }
     });
-
     if (min !== Infinity && max !== -Infinity && min !== max) {
       setGlobalTimeBounds({ min, max });
       setTimeRange({ start: min, end: max });
@@ -135,21 +230,21 @@ function App() {
   const filteredGraphData = useMemo(() => {
     if (!rawGraphData || !rawGraphData.nodes) return { nodes: [], links: [] };
 
-    let validLinks = rawGraphData.links.filter((link: any) => {
+    let baseNodes = rawGraphData.nodes.filter((n: any) => !edits.deletedNodes.has(n.id));
+    let baseLinks = rawGraphData.links.filter((l: any) => !edits.deletedLinks.has(l.id));
+
+    let validLinks = baseLinks.filter((link: any) => {
       if (timeRange) {
         const t = extractTimestamp(link);
         if (t && (t < timeRange.start || t > timeRange.end)) {
           return false;
         }
       }
-
       if (searchQuery.trim() !== '') {
         const query = searchQuery.trim();
-
         const evaluateTerm = (term: string) => {
           let isNot = false;
           let cleanTerm = term.trim();
-
           if (cleanTerm.toLowerCase().startsWith('not ')) {
             isNot = true;
             cleanTerm = cleanTerm.substring(4).trim();
@@ -157,22 +252,16 @@ function App() {
             isNot = true;
             cleanTerm = cleanTerm.substring(1).trim();
           }
-
           if (!cleanTerm) return true;
-
           let matchResult = false;
-
           const advancedPattern = /^(\d+)\.([a-zA-Z0-9_]+)\s*==\s*(["']?)(.*)\3$/i;
           const advancedMatch = cleanTerm.match(advancedPattern);
-
           if (advancedMatch) {
             const targetEventId = advancedMatch[1];
             const targetField = advancedMatch[2];
             const targetValue = advancedMatch[4].toLowerCase();
-
             const details = link.details || {};
             const evId = details.event_id?.toString() || "";
-
             if (evId === targetEventId && (targetField in details)) {
               const actualValue = details[targetField]?.toString().toLowerCase() || "";
               matchResult = actualValue.includes(targetValue) || actualValue === targetValue;
@@ -182,67 +271,66 @@ function App() {
           } else {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            const sourceNode = rawGraphData.nodes.find((n: any) => n.id === sourceId);
-            const targetNode = rawGraphData.nodes.find((n: any) => n.id === targetId);
-
+            const sourceNode = baseNodes.find((n: any) => n.id === sourceId);
+            const targetNode = baseNodes.find((n: any) => n.id === targetId);
             const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
             matchResult = searchableText.includes(cleanTerm.toLowerCase());
           }
-
           return isNot ? !matchResult : matchResult;
         };
-
         const orGroups = query.split(/\s+or\s+/i);
         const passedSearch = orGroups.some(orGroup => {
           const andTerms = orGroup.split(/\s+and\s+/i);
           return andTerms.every(term => evaluateTerm(term));
         });
-
         if (!passedSearch) return false;
       }
-
       return true;
     });
 
-    let finalNodes = rawGraphData.nodes;
+    let finalNodes = baseNodes;
     let finalLinks = validLinks;
 
     if (activeFilters.length > 0) {
       const primaryNodeIds = new Set(
-        rawGraphData.nodes
+        baseNodes
           .filter((n: any) => activeFilters.includes(n.label?.toLowerCase()))
           .map((n: any) => n.id)
       );
-
       finalLinks = validLinks.filter((link: any) => {
         const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
         const targetId = typeof link.target === 'object' ? link.target.id : link.target;
         return primaryNodeIds.has(sourceId) || primaryNodeIds.has(targetId);
       });
-
       const requiredNodeIds = new Set(primaryNodeIds);
       finalLinks.forEach((link: any) => {
         requiredNodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
         requiredNodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
       });
-
-      finalNodes = rawGraphData.nodes.filter((n: any) => requiredNodeIds.has(n.id));
+      finalNodes = baseNodes.filter((n: any) => requiredNodeIds.has(n.id));
     } else {
       const isTimeFiltered = timeRange && globalTimeBounds &&
         (timeRange.start > globalTimeBounds.min || timeRange.end < globalTimeBounds.max);
-
       if (searchQuery.trim() !== '' || isTimeFiltered) {
         const linkedNodeIds = new Set();
         finalLinks.forEach((l: any) => {
           linkedNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
           linkedNodeIds.add(typeof l.target === 'object' ? l.target.id : l.target);
         });
-        finalNodes = rawGraphData.nodes.filter((n: any) => linkedNodeIds.has(n.id));
+        finalNodes = baseNodes.filter((n: any) => linkedNodeIds.has(n.id));
       }
     }
 
+    finalNodes.forEach((n: any) => {
+      n.is_red = (n.is_red || edits.redNodes.has(n.id)) && !edits.unredNodes.has(n.id);
+    });
+
+    finalLinks.forEach((l: any) => {
+      l.is_red = (l.is_red || edits.redLinks.has(l.id)) && !edits.unredLinks.has(l.id);
+    });
+
     return { nodes: finalNodes, links: finalLinks };
-  }, [rawGraphData, searchQuery, activeFilters, timeRange, globalTimeBounds]);
+  }, [rawGraphData, searchQuery, activeFilters, timeRange, globalTimeBounds, edits]);
 
   const filtersUI = rawGraphData.nodes.length > 0 ? (
     <GraphFilters
@@ -264,20 +352,41 @@ function App() {
 
   return (
     <>
+      {isSaving && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', padding: '30px 50px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', fontSize: '20px', fontWeight: 'bold', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 2s linear infinite' }}>
+              <line x1="12" y1="2" x2="12" y2="6"></line>
+              <line x1="12" y1="18" x2="12" y2="22"></line>
+              <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+              <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+              <line x1="2" y1="12" x2="6" y2="12"></line>
+              <line x1="18" y1="12" x2="22" y2="12"></line>
+              <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+              <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+            </svg>
+            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+            uploading investigation...
+          </div>
+        </div>
+      )}
       <GraphPanel
         graphData={filteredGraphData}
+        caseId={caseId}
+        refreshKey={refreshKey}
         onLinkClick={handleLinkClick}
         onDataLoaded={handleDataLoaded}
         filtersComponent={filtersUI}
         onSendNodeToAI={handleSendNodeToAI}
         onApplyNodeFilter={handleApplyNodeFilter}
+        onApplyEdit={handleApplyEdit}
+        onSaveEdited={handleSaveEdited}
       >
         <LogPanel
           selectedLink={selectedLink}
           caseId={caseId}
         />
       </GraphPanel>
-
       <AIAssistant
         caseId={caseId}
         externalPrompt={externalAIPrompt}

@@ -4,9 +4,6 @@ import { apiService } from "../services/api";
 import NodeContextMenu from './NodeContextMenu';
 import './GraphPanel.css';
 
-// ==========================================
-// CONSTANTS & HELPERS
-// ==========================================
 const GRAPH_SETTINGS = {
     NODE_RADIUS: 16,
     LINK_COLOR: '#94a3b8',
@@ -28,22 +25,27 @@ const ICONS_SVG = {
     GROUP: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%236366f1"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
 };
 
-const extractTimestamp = (obj: any): number | null => {
-    if (!obj) return null;
-    if (obj.timestamp) return new Date(obj.timestamp).getTime();
-    if (obj.time) return new Date(obj.time).getTime();
-    if (obj.details?.timestamp) return new Date(obj.details.timestamp).getTime();
-    if (obj.details?.System?.TimeCreated?.SystemTime) return new Date(obj.details.System.TimeCreated.SystemTime).getTime();
-    return null;
-};
-
-const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any) => {
+const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any, selectedNodes: any[]) => {
     const rawLabel = node.properties?.name || node.name || node.id;
     const label = (rawLabel.length > 20) ? rawLabel.substring(0, 12) + "..." : rawLabel;
-
     const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
-    const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
 
+    if (selectedNodes.some((n: any) => n.id === node.id)) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, iconSize / 1.5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+        ctx.fill();
+        ctx.lineWidth = 2 / globalScale;
+        ctx.strokeStyle = '#eab308';
+        ctx.stroke();
+    } else if (node.is_red) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, iconSize / 1.5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+        ctx.fill();
+    }
+
+    const iconImage = nodeIcons[node.label?.toLowerCase()] || nodeIcons['process'];
     if (iconImage) {
         ctx.drawImage(iconImage, node.x - iconSize / 2, node.y - iconSize / 2, iconSize, iconSize);
     }
@@ -53,15 +55,12 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.font = `500 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-
         const x = node.x;
         const y = node.y + iconSize / 2 + 2;
-
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 3 / globalScale;
         ctx.strokeText(label, x, y);
-
-        ctx.fillStyle = '#1e293b';
+        ctx.fillStyle = node.is_red ? '#ef4444' : '#1e293b';
         ctx.fillText(label, x, y);
     }
 };
@@ -74,7 +73,6 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     const deltaX = endNode.x - startNode.x;
     const deltaY = endNode.y - startNode.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
     if (distance === 0) return;
 
     const totalOffset = GRAPH_SETTINGS.NODE_RADIUS + GRAPH_SETTINGS.NODE_MARGIN;
@@ -87,7 +85,6 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
 
     const distToControlEnd = Math.sqrt(Math.pow(endNode.x - controlPoint.x, 2) + Math.pow(endNode.y - controlPoint.y, 2));
     const distToControlStart = Math.sqrt(Math.pow(startNode.x - controlPoint.x, 2) + Math.pow(startNode.y - controlPoint.y, 2));
-
     if (distToControlEnd === 0 || distToControlStart === 0) return;
 
     const targetTipX = endNode.x - ((endNode.x - controlPoint.x) / distToControlEnd) * totalOffset;
@@ -95,9 +92,11 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
     const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
 
+    const linkColor = link.is_red ? '#ef4444' : GRAPH_SETTINGS.LINK_COLOR;
+
     ctx.beginPath();
-    ctx.strokeStyle = GRAPH_SETTINGS.LINK_COLOR;
-    ctx.lineWidth = Math.max(GRAPH_SETTINGS.LINK_WIDTH / globalScale, 0.8);
+    ctx.strokeStyle = linkColor;
+    ctx.lineWidth = Math.max((link.is_red ? 3 : GRAPH_SETTINGS.LINK_WIDTH) / globalScale, 0.8);
     ctx.moveTo(sourceTipX, sourceTipY);
     ctx.quadraticCurveTo(
         controlPoint.x,
@@ -111,7 +110,7 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     const baseY = targetTipY - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_LENGTH;
 
     ctx.beginPath();
-    ctx.fillStyle = GRAPH_SETTINGS.LINK_COLOR;
+    ctx.fillStyle = linkColor;
     ctx.moveTo(targetTipX, targetTipY);
     ctx.lineTo(baseX - ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY + ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
     ctx.lineTo(baseX + ((endNode.y - controlPoint.y) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH, baseY - ((endNode.x - controlPoint.x) / distToControlEnd) * GRAPH_SETTINGS.ARROW_WIDTH);
@@ -121,17 +120,14 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     if (globalScale >= 0.8) {
         const label = link.type || link.label || "";
         if (!label) return;
-
         const textPos = {
             x: 0.25 * startNode.x + 0.5 * controlPoint.x + 0.25 * endNode.x,
             y: 0.25 * startNode.y + 0.5 * controlPoint.y + 0.25 * endNode.y
         };
-
         let textAngle = Math.atan2(endNode.y - startNode.y, endNode.x - startNode.x);
         if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
             textAngle += Math.PI;
         }
-
         const baseFontSize = GRAPH_SETTINGS.LABEL_FONT_SIZE > 5 ? GRAPH_SETTINGS.LABEL_FONT_SIZE : 10;
         const fontSize = Math.max(baseFontSize / globalScale, 2);
 
@@ -142,13 +138,11 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
         ctx.save();
         ctx.translate(textPos.x, textPos.y);
         ctx.rotate(textAngle);
-
         ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
         ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2 - (fontSize * 0.4), bgDimensions[0], bgDimensions[1]);
-
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#475569';
+        ctx.fillStyle = link.is_red ? '#ef4444' : '#475569';
         ctx.fillText(label, 0, -(fontSize * 0.4));
         ctx.restore();
     }
@@ -156,20 +150,28 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
 
 interface GraphPanelProps {
     graphData: { nodes: any[], links: any[] };
+    caseId?: string | null;
+    refreshKey?: number;
     onLinkClick: (link: any) => void;
-    onDataLoaded: (data: any, caseId: string) => void;
+    onDataLoaded: (data: any, caseId: string | null) => void;
     onSendNodeToAI: (node: any) => void;
     onApplyNodeFilter: (node: any) => void;
+    onApplyEdit: (action: 'red' | 'unred' | 'delete', targetType: 'node' | 'link' | 'group', targetData: any) => void;
+    onSaveEdited: (newName: string) => void;
     children?: React.ReactNode;
     filtersComponent?: React.ReactNode;
 }
 
 const GraphPanel: React.FC<GraphPanelProps> = ({
     graphData,
+    caseId,
+    refreshKey = 0,
     onLinkClick,
     onDataLoaded,
     onSendNodeToAI,
     onApplyNodeFilter,
+    onApplyEdit,
+    onSaveEdited,
     children,
     filtersComponent
 }) => {
@@ -181,10 +183,17 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     const [newInvestigationName, setNewInvestigationName] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
-    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: any } | null>(null);
+
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetLabel: string; targetType: 'node' | 'link' | 'group'; targetData: any } | null>(null);
+    const [selectedGroup, setSelectedGroup] = useState<{ nodes: any[], links: any[] }>({ nodes: [], links: [] });
+    const [isLasso, setIsLasso] = useState(false);
+    const [lassoBox, setLassoBox] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
 
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
+    const pressTimer = useRef<any>(null);
+    const initialClick = useRef<{ x: number, y: number } | null>(null);
+    const hoveredItemRef = useRef<any>(null);
 
     useEffect(() => {
         const loadSingleImage = (svgString: string) => {
@@ -192,7 +201,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             img.src = svgString;
             return img;
         };
-
         setNodeIcons({
             process: loadSingleImage(ICONS_SVG.PROCESS),
             user: loadSingleImage(ICONS_SVG.USER),
@@ -218,7 +226,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             }
         };
         loadInvestigations();
-    }, [selectedCaseId]);
+    }, [selectedCaseId, refreshKey]);
 
     useEffect(() => {
         const resizeObserver = new ResizeObserver((entries) => {
@@ -234,7 +242,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
         if (!graphData || !graphData.links) return graphData;
         const linksWithCurvature = [...graphData.links];
         const connectionCounter: Record<string, number> = {};
-
         linksWithCurvature.forEach(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
@@ -244,7 +251,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             connectionCounter[pairId]++;
             link.isReversed = sourceId > targetId;
         });
-
         linksWithCurvature.forEach(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
@@ -254,18 +260,16 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             const centralOffset = link.pairIndex - (totalConnections - 1) / 2;
             link.curvature = centralOffset * baseCurvatureStep * (link.isReversed ? -1 : 1);
         });
-
         return { nodes: graphData.nodes, links: linksWithCurvature };
     }, [graphData]);
 
     useEffect(() => {
-        if (graphRef.current && graphDataWithCurvature.nodes.length > 0) {
+        if (graphRef.current) {
             graphRef.current.d3Force('charge').strength(-300);
             graphRef.current.d3Force('link').distance(350);
             graphRef.current.d3Force('center').strength(0.01);
-            graphRef.current.d3ReheatSimulation();
         }
-    }, [graphDataWithCurvature]);
+    }, [caseId]);
 
     const fetchExistingInvestigation = async () => {
         if (!selectedCaseId) return;
@@ -295,23 +299,108 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
         }
     };
 
-    const handleDeleteInvestigation = async (e: React.MouseEvent, caseIdToDelete: string) => {
-        if (!caseIdToDelete) return;
-        if (!window.confirm("Are you sure you want to permanently delete this investigation?")) return;
+    const handleDeleteInvestigation = async (idToDelete: string) => {
+        if (!window.confirm("Are you sure you want to delete this investigation?")) return;
         try {
-            await apiService.deleteInvestigation(caseIdToDelete);
-            setInvestigationsList(prev => prev.filter(inv => inv.case_id !== caseIdToDelete));
-            if (selectedCaseId === caseIdToDelete) setSelectedCaseId('');
-        } catch (error) {
-            console.error("Failed to delete investigation:", error);
-            alert("Failed to delete the investigation.");
+            await fetch(`http://localhost:8000/api/investigations/${idToDelete}`, {
+                method: 'DELETE'
+            });
+
+            setInvestigationsList(prev => prev.filter(inv => inv.case_id !== idToDelete));
+
+            if (selectedCaseId === idToDelete) {
+                const remaining = investigationsList.filter(inv => inv.case_id !== idToDelete);
+                setSelectedCaseId(remaining.length > 0 ? remaining[0].case_id : '');
+            }
+            if (caseId === idToDelete) {
+                onDataLoaded({ nodes: [], links: [] }, null);
+            }
+        } catch (e) {
+            console.error("Failed to delete", e);
         }
     };
 
-    const handlePointerHover = (element: any) => {
+    const handleNodeHover = (node: any) => {
+        hoveredItemRef.current = node;
         const canvas = containerRef.current?.querySelector('canvas');
         if (canvas) {
-            canvas.style.cursor = element ? 'pointer' : 'default';
+            canvas.style.cursor = node ? 'pointer' : (isLasso ? 'crosshair' : 'default');
+        }
+    };
+
+    const handleLinkHover = (link: any) => {
+        hoveredItemRef.current = link;
+        const canvas = containerRef.current?.querySelector('canvas');
+        if (canvas) {
+            canvas.style.cursor = link ? 'pointer' : (isLasso ? 'crosshair' : 'default');
+        }
+    };
+
+    const handleContainerMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        if (hoveredItemRef.current) return;
+
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        initialClick.current = { x: e.clientX, y: e.clientY };
+
+        pressTimer.current = setTimeout(() => {
+            setIsLasso(true);
+            setLassoBox({ x1: x, y1: y, x2: x, y2: y });
+            setSelectedGroup({ nodes: [], links: [] });
+            setContextMenu(null);
+            const canvas = containerRef.current?.querySelector('canvas');
+            if (canvas) canvas.style.cursor = 'crosshair';
+        }, 500);
+    };
+
+    const handleContainerMouseMove = (e: React.MouseEvent) => {
+        if (isLasso) {
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            setLassoBox(prev => ({ ...prev, x2: e.clientX - rect.left, y2: e.clientY - rect.top }));
+        } else if (initialClick.current) {
+            const dx = Math.abs(e.clientX - initialClick.current.x);
+            const dy = Math.abs(e.clientY - initialClick.current.y);
+            if (dx > 5 || dy > 5) {
+                clearTimeout(pressTimer.current);
+                initialClick.current = null;
+            }
+        }
+    };
+
+    const handleContainerMouseUp = () => {
+        clearTimeout(pressTimer.current);
+        initialClick.current = null;
+        if (isLasso) {
+            setIsLasso(false);
+            const canvas = containerRef.current?.querySelector('canvas');
+            if (canvas) canvas.style.cursor = 'default';
+
+            const minX = Math.min(lassoBox.x1, lassoBox.x2);
+            const maxX = Math.max(lassoBox.x1, lassoBox.x2);
+            const minY = Math.min(lassoBox.y1, lassoBox.y2);
+            const maxY = Math.max(lassoBox.y1, lassoBox.y2);
+
+            const selectedNodes = graphDataWithCurvature.nodes.filter((n: any) => {
+                if (!graphRef.current) return false;
+                const pos = graphRef.current.graph2ScreenCoords(n.x, n.y);
+                return pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY;
+            });
+
+            if (selectedNodes.length > 0) {
+                setSelectedGroup({ nodes: selectedNodes, links: [] });
+            }
+        }
+    };
+
+    const triggerSave = () => {
+        const name = prompt("Enter a name for the edited investigation:");
+        if (name) {
+            onSaveEdited(name);
         }
     };
 
@@ -331,7 +420,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                         </label>
                     </div>
                 </div>
-
                 <div className="toolbar-controls">
                     {mode === 'new' ? (
                         <>
@@ -354,34 +442,39 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                         </>
                     ) : (
                         <>
-                            <select
-                                className="modern-select"
-                                value={selectedCaseId}
-                                onChange={(e) => setSelectedCaseId(e.target.value)}
-                            >
-                                <option value="" disabled>Select an Investigation...</option>
-                                {investigationsList.map(inv => (
-                                    <option key={inv.case_id} value={inv.case_id}>
-                                        {inv.name} ({inv.case_id.substring(0, 8)})
-                                    </option>
-                                ))}
-                            </select>
-
-                            <button
-                                className="btn-danger-icon"
-                                onClick={(e) => handleDeleteInvestigation(e, selectedCaseId)}
-                                disabled={!selectedCaseId || status === 'uploading'}
-                                title="Delete Selected Investigation"
-                            >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="3 6 5 6 21 6"></polyline>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                </svg>
-                            </button>
-
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <select
+                                    className="modern-select"
+                                    value={selectedCaseId}
+                                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                                >
+                                    <option value="" disabled>Select an Investigation...</option>
+                                    {investigationsList.map(inv => (
+                                        <option key={inv.case_id} value={inv.case_id}>
+                                            {inv.name} ({inv.case_id.substring(0, 8)})
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={() => handleDeleteInvestigation(selectedCaseId)}
+                                    disabled={!selectedCaseId}
+                                    style={{ background: 'none', border: 'none', cursor: selectedCaseId ? 'pointer' : 'default', padding: '5px', opacity: selectedCaseId ? 1 : 0.5 }}
+                                    title="Delete Investigation"
+                                >
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                </button>
+                            </div>
                             <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading'}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
+                            {caseId && (
+                                <button className="btn-secondary" onClick={triggerSave} style={{ marginLeft: '10px' }}>
+                                    Save Edited
+                                </button>
+                            )}
                         </>
                     )}
                 </div>
@@ -393,12 +486,14 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                     style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}
                 >
                     {filtersComponent}
-
                     <div
                         className="canvas-wrapper"
                         ref={containerRef}
                         style={{ flex: 1, position: 'relative', minHeight: 0, minWidth: 0, overflow: 'hidden', width: '100%', height: '100%' }}
                         onContextMenu={(e) => e.preventDefault()}
+                        onMouseDownCapture={handleContainerMouseDown}
+                        onMouseMoveCapture={handleContainerMouseMove}
+                        onMouseUpCapture={handleContainerMouseUp}
                     >
                         {dimensions.width > 0 && dimensions.height > 0 && graphDataWithCurvature.nodes.length > 0 ? (
                             <ForceGraph2D
@@ -406,8 +501,10 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 width={dimensions.width}
                                 height={dimensions.height}
                                 graphData={graphDataWithCurvature}
-                                onNodeHover={handlePointerHover}
-                                onLinkHover={handlePointerHover}
+                                enableZoomPanInteraction={!isLasso}
+                                enableNodeDrag={!isLasso}
+                                onNodeHover={handleNodeHover}
+                                onLinkHover={handleLinkHover}
                                 nodePointerAreaPaint={(node: any, color: string, ctx: any) => {
                                     const iconSize = (node.label === 'User' || node.label === 'Computer') ? 34 : 26;
                                     ctx.fillStyle = color;
@@ -417,30 +514,62 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 }}
                                 onLinkClick={(link) => {
                                     setContextMenu(null);
+                                    setSelectedGroup({ nodes: [], links: [] });
                                     onLinkClick(link);
                                 }}
                                 onBackgroundClick={() => {
+                                    setIsLasso(false);
+                                    const canvas = containerRef.current?.querySelector('canvas');
+                                    if (canvas) canvas.style.cursor = 'default';
                                     setContextMenu(null);
+                                    setSelectedGroup({ nodes: [], links: [] });
                                 }}
-                                onBackgroundRightClick={() => {
-                                    setContextMenu(null);
+                                onBackgroundRightClick={(event) => {
+                                    if (selectedGroup.nodes.length > 0 && containerRef.current) {
+                                        const rect = containerRef.current.getBoundingClientRect();
+                                        setContextMenu({
+                                            x: event.clientX - rect.left,
+                                            y: event.clientY - rect.top,
+                                            targetType: 'group',
+                                            targetData: selectedGroup,
+                                            targetLabel: `${selectedGroup.nodes.length} Elements Selected`
+                                        });
+                                    } else {
+                                        setContextMenu(null);
+                                    }
                                 }}
                                 onNodeClick={() => {
                                     setContextMenu(null);
+                                    setSelectedGroup({ nodes: [], links: [] });
                                 }}
                                 onNodeRightClick={(node, event) => {
                                     event.preventDefault();
                                     if (containerRef.current) {
                                         const rect = containerRef.current.getBoundingClientRect();
+                                        const isGroup = selectedGroup.nodes.some(n => n.id === node.id);
                                         setContextMenu({
                                             x: event.clientX - rect.left,
                                             y: event.clientY - rect.top,
-                                            node
+                                            targetType: isGroup ? 'group' : 'node',
+                                            targetData: isGroup ? selectedGroup : node,
+                                            targetLabel: isGroup ? `${selectedGroup.nodes.length} Elements Selected` : node.properties?.name || node.name || node.id
+                                        });
+                                    }
+                                }}
+                                onLinkRightClick={(link, event) => {
+                                    if (containerRef.current) {
+                                        const rect = containerRef.current.getBoundingClientRect();
+                                        setContextMenu({
+                                            x: event.clientX - rect.left,
+                                            y: event.clientY - rect.top,
+                                            targetType: 'link',
+                                            targetData: link,
+                                            targetLabel: link.type || 'Connection'
                                         });
                                     }
                                 }}
                                 cooldownTicks={100}
-                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons)}
+                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons, selectedGroup.nodes)}
                                 linkCanvasObjectMode={() => 'replace'}
                                 linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale)}
                             />
@@ -450,14 +579,30 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             </div>
                         )}
 
+                        {isLasso && (
+                            <div style={{
+                                position: 'absolute',
+                                border: '1px solid #0078d7',
+                                backgroundColor: 'rgba(0, 120, 215, 0.4)',
+                                left: Math.min(lassoBox.x1, lassoBox.x2),
+                                top: Math.min(lassoBox.y1, lassoBox.y2),
+                                width: Math.abs(lassoBox.x2 - lassoBox.x1),
+                                height: Math.abs(lassoBox.y2 - lassoBox.y1),
+                                pointerEvents: 'none'
+                            }} />
+                        )}
+
                         {contextMenu && (
                             <NodeContextMenu
                                 x={contextMenu.x}
                                 y={contextMenu.y}
-                                node={contextMenu.node}
+                                targetLabel={contextMenu.targetLabel}
+                                targetType={contextMenu.targetType}
+                                node={contextMenu.targetType === 'node' ? contextMenu.targetData : null}
                                 onClose={() => setContextMenu(null)}
                                 onSendToAI={onSendNodeToAI}
                                 onApplyFilter={onApplyNodeFilter}
+                                onApplyEdit={(action) => onApplyEdit(action, contextMenu.targetType, contextMenu.targetData)}
                             />
                         )}
                     </div>
