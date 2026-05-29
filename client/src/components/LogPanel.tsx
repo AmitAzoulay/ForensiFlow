@@ -20,12 +20,14 @@ interface LinkDetails {
 interface LogPanelProps {
     selectedLink: LinkDetails | null;
     caseId: string | null;
-    onApplyFieldFilter?: (eventId: string, fieldName: string, value: string) => void;
+    hasExistingQuery?: boolean;
+    onApplyFieldFilter?: (eventId: string, fieldName: string, value: string, appendMode?: 'AND' | 'OR') => void;
 }
 
 const LogPanel: React.FC<LogPanelProps> = ({
     selectedLink,
     caseId,
+    hasExistingQuery,
     onApplyFieldFilter
 }) => {
     const [contextMenu, setContextMenu] = useState<{
@@ -190,6 +192,47 @@ const LogPanel: React.FC<LogPanelProps> = ({
                         </svg>
                         Apply as Filter
                     </button>
+
+                    {hasExistingQuery && (
+                        <>
+                            <button
+                                onClick={() => {
+                                    if (onApplyFieldFilter) {
+                                        const evId = selectedLink?.details?.event_id || selectedLink?.details?.EventID || '*';
+                                        onApplyFieldFilter(String(evId), contextMenu.fieldName, contextMenu.value, 'AND');
+                                    }
+                                    setContextMenu(null);
+                                }}
+                                style={{ background: 'none', border: 'none', padding: '8px 12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#1e293b', borderRadius: '4px', width: '100%', marginTop: '2px' }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                Add with AND
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (onApplyFieldFilter) {
+                                        const evId = selectedLink?.details?.event_id || selectedLink?.details?.EventID || '*';
+                                        onApplyFieldFilter(String(evId), contextMenu.fieldName, contextMenu.value, 'OR');
+                                    }
+                                    setContextMenu(null);
+                                }}
+                                style={{ background: 'none', border: 'none', padding: '8px 12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#1e293b', borderRadius: '4px', width: '100%', marginTop: '2px' }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                Add with OR
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
         </div>

@@ -107,18 +107,27 @@ function App() {
     }
   };
 
-  const handleApplyNodeFilter = (node: any) => {
+  const handleApplyNodeFilter = (node: any, appendMode?: 'AND' | 'OR') => {
     setPastHistory(prev => [...prev, { searchQuery, activeFilters, timeRange }]);
     setFutureHistory([]);
     const nodeName = node.properties?.name || node.name || node.id;
-    setSearchQuery(nodeName);
+    let newQuery = nodeName;
+    if (appendMode && searchQuery.trim() !== '') {
+      newQuery = `${searchQuery} ${appendMode} ${nodeName}`;
+    }
+    setSearchQuery(newQuery);
   };
 
-  const handleApplyFieldFilter = (eventId: string, fieldName: string, value: string) => {
+  const handleApplyFieldFilter = (eventId: string, fieldName: string, value: string, appendMode?: 'AND' | 'OR') => {
     setPastHistory(prev => [...prev, { searchQuery, activeFilters, timeRange }]);
     setFutureHistory([]);
     const safeEventId = eventId || '*';
-    setSearchQuery(`${safeEventId}.${fieldName}==${value}`);
+    const newTerm = `${safeEventId}.${fieldName}==${value}`;
+    let newQuery = newTerm;
+    if (appendMode && searchQuery.trim() !== '') {
+      newQuery = `${searchQuery} ${appendMode} ${newTerm}`;
+    }
+    setSearchQuery(newQuery);
   };
 
   const handleApplyEdit = (action: 'red' | 'unred' | 'delete', targetType: 'node' | 'link' | 'group', targetData: any) => {
@@ -524,6 +533,7 @@ function App() {
         activePlaybackNodeIds={activePlaybackNodeIds}
         activePlaybackLinkIds={activePlaybackLinkIds}
         hasRedItems={playbackSequence.length > 0}
+        hasExistingQuery={searchQuery.trim() !== ''}
         onStartPlayback={handleStartPlayback}
         onLinkClick={handleLinkClick}
         onDataLoaded={handleDataLoaded}
@@ -537,6 +547,7 @@ function App() {
         <LogPanel
           selectedLink={selectedLink}
           caseId={caseId}
+          hasExistingQuery={searchQuery.trim() !== ''}
           onApplyFieldFilter={handleApplyFieldFilter}
         />
       </GraphPanel>
