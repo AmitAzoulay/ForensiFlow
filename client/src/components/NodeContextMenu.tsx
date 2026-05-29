@@ -6,11 +6,12 @@ interface NodeContextMenuProps {
     y: number;
     targetLabel: string;
     targetType: 'node' | 'link' | 'group';
-    node: any;
+    targetData?: any;
     onClose: () => void;
-    onSendToAI?: (node: any) => void;
+    onSendToAI?: (type: 'node' | 'link', data: any) => void;
     onApplyFilter?: (node: any) => void;
     onApplyEdit?: (action: 'red' | 'unred' | 'delete') => void;
+    onIsolateLineage?: (node: any) => void;
 }
 
 const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
@@ -18,11 +19,12 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
     y,
     targetLabel,
     targetType,
-    node,
+    targetData,
     onClose,
     onSendToAI,
     onApplyFilter,
     onApplyEdit,
+    onIsolateLineage
 }) => {
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -82,20 +84,20 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"></path>
                         </svg>
                         Delete
                     </button>
                 </>
             )}
 
-            {targetType === 'node' && node && onSendToAI && onApplyFilter && (
+            {(targetType === 'node' || targetType === 'link') && targetData && onSendToAI && (
                 <>
                     <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '4px 0' }}></div>
                     <button
                         className="menu-item"
                         onClick={() => {
-                            onSendToAI(node);
+                            onSendToAI(targetType, targetData);
                             onClose();
                         }}
                     >
@@ -104,19 +106,40 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                         </svg>
                         Send to AI
                     </button>
-                    <button
-                        className="menu-item"
-                        onClick={() => {
-                            onApplyFilter(node);
-                            onClose();
-                        }}
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                        </svg>
-                        Apply as Filter
-                    </button>
                 </>
+            )}
+
+            {targetType === 'node' && targetData && onApplyFilter && (
+                <button
+                    className="menu-item"
+                    onClick={() => {
+                        onApplyFilter(targetData);
+                        onClose();
+                    }}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                    </svg>
+                    Apply as Filter
+                </button>
+            )}
+
+            {targetType === 'node' && targetData && onIsolateLineage && (
+                <button
+                    className="menu-item"
+                    onClick={() => {
+                        onIsolateLineage(targetData);
+                        onClose();
+                    }}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="6" y1="3" x2="6" y2="15"></line>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <circle cx="6" cy="18" r="3"></circle>
+                        <path d="M18 9a9 9 0 0 1-9 9"></path>
+                    </svg>
+                    Isolate Lineage
+                </button>
             )}
         </div>
     );
