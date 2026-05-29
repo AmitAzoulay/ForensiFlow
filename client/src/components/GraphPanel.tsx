@@ -191,10 +191,11 @@ interface GraphPanelProps {
     onStartPlayback?: () => void;
     onLinkClick: (link: any) => void;
     onDataLoaded: (data: any, caseId: string | null) => void;
-    onSendNodeToAI: (node: any) => void;
+    onSendToAI: (type: 'node' | 'link', data: any) => void;
     onApplyNodeFilter: (node: any) => void;
     onApplyEdit: (action: 'red' | 'unred' | 'delete', targetType: 'node' | 'link' | 'group', targetData: any) => void;
     onSaveEdited: (newName: string) => void;
+    onIsolateLineage: (node: any) => void;
     children?: React.ReactNode;
     filtersComponent?: React.ReactNode;
 }
@@ -210,10 +211,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     onStartPlayback,
     onLinkClick,
     onDataLoaded,
-    onSendNodeToAI,
+    onSendToAI,
     onApplyNodeFilter,
     onApplyEdit,
     onSaveEdited,
+    onIsolateLineage,
     children,
     filtersComponent
 }) => {
@@ -518,7 +520,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 >
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
                                         <polyline points="3 6 5 6 21 6"></polyline>
-                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"></path>
                                     </svg>
                                 </button>
                             </div>
@@ -665,11 +667,12 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 y={contextMenu.y}
                                 targetLabel={contextMenu.targetLabel}
                                 targetType={contextMenu.targetType}
-                                node={contextMenu.targetType === 'node' ? contextMenu.targetData : null}
+                                targetData={contextMenu.targetData}
                                 onClose={() => setContextMenu(null)}
-                                onSendToAI={onSendNodeToAI}
+                                onSendToAI={onSendToAI}
                                 onApplyFilter={onApplyNodeFilter}
                                 onApplyEdit={(action) => onApplyEdit(action, contextMenu.targetType, contextMenu.targetData)}
+                                onIsolateLineage={onIsolateLineage}
                             />
                         )}
                     </div>

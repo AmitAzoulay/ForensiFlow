@@ -3,6 +3,7 @@ import GraphPanel from './components/GraphPanel';
 import LogPanel from './components/LogPanel';
 import AIAssistant from './components/AIAssistant';
 import GraphFilters from './components/GraphFilters';
+import ExecutionLineage from './components/ExecutionLineage';
 import './App.css';
 
 interface ViewState {
@@ -22,7 +23,7 @@ const extractTimestamp = (obj: any): number | null => {
 
 function App() {
   const [rawGraphData, setRawGraphData] = useState({ nodes: [], links: [] });
-  const [selectedLink, setSelectedLink] = useState(null);
+  const [selectedLink, setSelectedLink] = useState<any>(null);
   const [caseId, setCaseId] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,6 +32,7 @@ function App() {
   const [timeRange, setTimeRange] = useState<{ start: number; end: number } | null>(null);
 
   const [externalAIPrompt, setExternalAIPrompt] = useState<{ text: string; timestamp: number } | null>(null);
+  const [lineageTarget, setLineageTarget] = useState<any>(null);
 
   const [pastHistory, setPastHistory] = useState<ViewState[]>([]);
   const [futureHistory, setFutureHistory] = useState<ViewState[]>([]);
@@ -62,6 +64,7 @@ function App() {
     setIsPlaybackMode(false);
     setIsPlaying(false);
     setPlaybackIndex(0);
+    setLineageTarget(null);
     setEdits({
       redNodes: new Set(),
       redLinks: new Set(),
@@ -84,12 +87,24 @@ function App() {
     );
   };
 
-  const handleSendNodeToAI = (node: any) => {
-    const nodeName = node.properties?.name || node.name || node.id;
-    setExternalAIPrompt({
-      text: `Please investigate node "${nodeName}". Focus on this node, its connected entities, and related chronological graph logs.`,
-      timestamp: Date.now()
-    });
+  const handleSendToAI = (type: 'node' | 'link', data: any) => {
+    if (type === 'node') {
+      const nodeName = data.properties?.name || data.name || data.id;
+      setExternalAIPrompt({
+        text: `Please investigate node "${nodeName}". Focus on this node, its connected entities, and related chronological graph logs.`,
+        timestamp: Date.now()
+      });
+    } else if (type === 'link') {
+      const logDetails = data?.details ? JSON.stringify(data.details, null, 2) : "No details available";
+      const sourceName = data?.source?.properties?.name || data?.source?.name || "Unknown Source";
+      const targetName = data?.target?.properties?.name || data?.target?.name || "Unknown Target";
+      const actionType = data?.type || "Unknown Action";
+
+      setExternalAIPrompt({
+        text: `I am looking at a specific log event: ${sourceName} -> ${actionType} -> ${targetName}.\nHere is the full telemetry for this event:\n${logDetails}\n\nPlease perform a detailed forensic investigation on this specific event. Focus on anomaly indicators, potential threat relevance, and its overall context.`,
+        timestamp: Date.now()
+      });
+    }
   };
 
   const handleApplyNodeFilter = (node: any) => {
@@ -97,6 +112,13 @@ function App() {
     setFutureHistory([]);
     const nodeName = node.properties?.name || node.name || node.id;
     setSearchQuery(nodeName);
+  };
+
+  const handleApplyFieldFilter = (eventId: string, fieldName: string, value: string) => {
+    setPastHistory(prev => [...prev, { searchQuery, activeFilters, timeRange }]);
+    setFutureHistory([]);
+    const safeEventId = eventId || '*';
+    setSearchQuery(`${safeEventId}.${fieldName}==${value}`);
   };
 
   const handleApplyEdit = (action: 'red' | 'unred' | 'delete', targetType: 'node' | 'link' | 'group', targetData: any) => {
@@ -261,15 +283,15 @@ function App() {
           }
           if (!cleanTerm) return true;
           let matchResult = false;
-          const advancedPattern = /^(\d+)\.([a-zA-Z0-9_]+)\s*==\s*(["']?)(.*)\3$/i;
+          const advancedPattern = /^(\d+|\*)\.([a-zA-Z0-9_]+)\s*==\s*(["']?)(.*)\3$/i;
           const advancedMatch = cleanTerm.match(advancedPattern);
           if (advancedMatch) {
             const targetEventId = advancedMatch[1];
             const targetField = advancedMatch[2];
             const targetValue = advancedMatch[4].toLowerCase();
             const details = link.details || {};
-            const evId = details.event_id?.toString() || "";
-            if (evId === targetEventId && (targetField in details)) {
+            const evId = details.event_id?.toString() || details.EventID?.toString() || "";
+            if ((evId === targetEventId || targetEventId === '*') && (targetField in details)) {
               const actualValue = details[targetField]?.toString().toLowerCase() || "";
               matchResult = actualValue.includes(targetValue) || actualValue === targetValue;
             } else {
@@ -486,6 +508,14 @@ function App() {
         </div>
       )}
 
+      {lineageTarget && (
+        <ExecutionLineage
+          targetNode={lineageTarget}
+          rawGraphData={filteredGraphData}
+          onClose={() => setLineageTarget(null)}
+        />
+      )}
+
       <GraphPanel
         graphData={filteredGraphData}
         caseId={caseId}
@@ -498,14 +528,16 @@ function App() {
         onLinkClick={handleLinkClick}
         onDataLoaded={handleDataLoaded}
         filtersComponent={filtersUI}
-        onSendNodeToAI={handleSendNodeToAI}
+        onSendToAI={handleSendToAI}
         onApplyNodeFilter={handleApplyNodeFilter}
         onApplyEdit={handleApplyEdit}
         onSaveEdited={handleSaveEdited}
+        onIsolateLineage={(node) => setLineageTarget(node)}
       >
         <LogPanel
           selectedLink={selectedLink}
           caseId={caseId}
+          onApplyFieldFilter={handleApplyFieldFilter}
         />
       </GraphPanel>
       <AIAssistant
