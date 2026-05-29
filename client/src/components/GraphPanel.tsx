@@ -188,11 +188,12 @@ interface GraphPanelProps {
     activePlaybackNodeIds?: Set<string>;
     activePlaybackLinkIds?: Set<string>;
     hasRedItems?: boolean;
+    hasExistingQuery?: boolean;
     onStartPlayback?: () => void;
     onLinkClick: (link: any) => void;
     onDataLoaded: (data: any, caseId: string | null) => void;
     onSendToAI: (type: 'node' | 'link', data: any) => void;
-    onApplyNodeFilter: (node: any) => void;
+    onApplyNodeFilter: (node: any, appendMode?: 'AND' | 'OR') => void;
     onApplyEdit: (action: 'red' | 'unred' | 'delete', targetType: 'node' | 'link' | 'group', targetData: any) => void;
     onSaveEdited: (newName: string) => void;
     onIsolateLineage: (node: any) => void;
@@ -208,6 +209,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     activePlaybackNodeIds,
     activePlaybackLinkIds,
     hasRedItems = false,
+    hasExistingQuery = false,
     onStartPlayback,
     onLinkClick,
     onDataLoaded,
@@ -312,8 +314,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             graphRef.current.d3Force('charge').strength(-300);
             graphRef.current.d3Force('link').distance(350);
             graphRef.current.d3Force('center').strength(0.01);
+            graphRef.current.d3ReheatSimulation();
         }
-    }, [caseId]);
+    }, [caseId, graphDataWithCurvature.nodes.length]);
 
     const fetchExistingInvestigation = async () => {
         if (!selectedCaseId) return;
@@ -668,6 +671,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 targetLabel={contextMenu.targetLabel}
                                 targetType={contextMenu.targetType}
                                 targetData={contextMenu.targetData}
+                                hasExistingQuery={hasExistingQuery}
                                 onClose={() => setContextMenu(null)}
                                 onSendToAI={onSendToAI}
                                 onApplyFilter={onApplyNodeFilter}
