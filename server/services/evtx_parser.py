@@ -116,12 +116,22 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
         proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
         obj_name = data_map.get('ObjectName', '')
         val_name = data_map.get('ObjectValueName', '')
-        
+        operation_type = data_map.get('OperationType', '').strip()
+
         reg_path = f"{obj_name}\\{val_name}" if val_name else obj_name
         if not reg_path or reg_path == "-": 
             reg_path = "Unknown_Registry_Key"
+
+        action_type = "REGISTRY_MODIFIED"
+        
+        if operation_type == '%%1904':
+            action_type = "REGISTRY_VALUE_CREATED"
+        elif operation_type == '%%1905':
+            action_type = "REGISTRY_VALUE_MODIFIED"
+        elif operation_type == '%%1906':
+            action_type = "REGISTRY_VALUE_DELETED"
             
-        _insert_graph_relationship(tx, case_id, "Process", proc, "Registry", reg_path, "REGISTRY_MODIFIED", details)
+        _insert_graph_relationship(tx, case_id, "Process", proc, "Registry", reg_path, action_type, details)
 
     elif event_id == '4720':
         src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
