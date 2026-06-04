@@ -145,7 +145,27 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
     elif event_id == '4663':
         proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
         file_obj = data_map.get('ObjectName', 'Unknown_Object')
-        _insert_graph_relationship(tx, case_id, "Process", proc, "File", file_obj, "OBJECT_ACCESSED", details)
+        access_mask_str = data_map.get('AccessMask', '').strip().lower()
+        action_type = None
+
+        if access_mask_str.startswith('0x'):
+            try:
+                mask_val = int(access_mask_str, 16)
+                
+                if mask_val & 0x10000:
+                    action_type = "OBJECT_ACCESSED_DELETE"
+                elif mask_val & 0x2:
+                    action_type = "OBJECT_ACCESSED_WRITE"
+                elif mask_val & 0x4:
+                    action_type = "OBJECT_ACCESSED_APPEND"
+                elif mask_val & 0x1:
+                    action_type = "OBJECT_ACCESSED_READ"
+                elif mask_val & 0x20:
+                    action_type = "OBJECT_ACCESSED_EXECUTE"
+            except ValueError:
+                pass
+            if action_type:
+                _insert_graph_relationship(tx, case_id, "Process", proc, "File", file_obj, action_type, details)
     elif event_id == '1102':
         user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
         _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "AUDIT_LOG_CLEARED", details)
