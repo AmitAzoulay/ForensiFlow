@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/api';
 import './LogPanel.css';
 
 interface NodeDetails {
@@ -37,6 +38,14 @@ const LogPanel: React.FC<LogPanelProps> = ({
         value: string;
     } | null>(null);
 
+    const [aiTranslation, setAiTranslation] = useState<string | null>(null);
+    const [isTranslating, setIsTranslating] = useState<boolean>(false);
+
+    useEffect(() => {
+        setAiTranslation(null);
+        setIsTranslating(false);
+    }, [selectedLink]);
+
     useEffect(() => {
         const handleClickOutside = () => setContextMenu(null);
         window.addEventListener('click', handleClickOutside);
@@ -50,13 +59,10 @@ const LogPanel: React.FC<LogPanelProps> = ({
 
     const formatTimestamp = (timestampStr: string | undefined) => {
         if (!timestampStr) return 'N/A';
-
         const dateObj = new Date(timestampStr);
-
         if (isNaN(dateObj.getTime())) {
             return timestampStr;
         }
-
         return dateObj.toLocaleString(undefined, {
             month: 'short', day: '2-digit',
             hour: '2-digit', minute: '2-digit', second: '2-digit'
@@ -66,19 +72,73 @@ const LogPanel: React.FC<LogPanelProps> = ({
     const handleRowContextMenu = (e: React.MouseEvent, fieldName: string, value: string) => {
         e.preventDefault();
         e.stopPropagation();
-        setContextMenu({
-            x: e.clientX,
-            y: e.clientY,
-            fieldName,
-            value
-        });
+        setContextMenu({ x: e.clientX, y: e.clientY, fieldName, value });
+    };
+
+    const handleTranslateLog = async () => {
+        if (!selectedLink || !caseId) return;
+        setIsTranslating(true);
+        try {
+            const logDetails = JSON.stringify(selectedLink.details, null, 2);
+            const prompt = `INSTRUCTION: Briefly explain this Windows event log in one simple sentence in English. No technical jargon. Telemetry: ${logDetails}`;
+            
+            const response = await apiService.sendChatMessage(caseId, [{ role: 'user', content: prompt }]);
+            if (response.reply) {
+                setAiTranslation(response.reply);
+            } else {
+                setAiTranslation("Failed to generate translation.");
+            }
+        } catch (error) {
+            setAiTranslation("Error connecting to AI service.");
+        } finally {
+            setIsTranslating(false);
+        }
     };
 
     return (
         <div className="log-panel-sidebar">
             <div className="log-panel-header">
                 <h2>Log Panel</h2>
+                {selectedLink && (
+                    <button 
+                        className="header-ai-btn" 
+                        onClick={handleTranslateLog} 
+                        disabled={isTranslating || !caseId}
+                        data-tooltip="Explain with AI"
+                    >
+                        {isTranslating ? (
+                            <svg className="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="12" y1="2" x2="12" y2="6"></line>
+                                <line x1="12" y1="18" x2="12" y2="22"></line>
+                                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                                <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                                <line x1="2" y1="12" x2="6" y2="12"></line>
+                                <line x1="18" y1="12" x2="22" y2="12"></line>
+                                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                                <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                            </svg>
+                        ) : (
+                            <svg className="ai-sparkle-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+                                <path d="M5 3v4"></path>
+                                <path d="M19 17v4"></path>
+                                <path d="M3 5h4"></path>
+                                <path d="M17 19h4"></path>
+                            </svg>
+                        )}
+                    </button>
+                )}
             </div>
+
+            {/* בלוק טקסט שמופיע רק כשיש תרגום */}
+            {aiTranslation && (
+                <div className="inline-ai-summary">
+                    <div className="ai-summary-text">
+                        <span className="ai-icon">✨</span> {aiTranslation}
+                    </div>
+                    <button className="close-summary-btn" onClick={() => setAiTranslation(null)}>×</button>
+                </div>
+            )}
 
             <div className="log-panel-content">
                 {selectedLink ? (
@@ -144,7 +204,6 @@ const LogPanel: React.FC<LogPanelProps> = ({
                                 )
                             })}
                         </div>
-
                     </div>
                 ) : (
                     <div className="empty-state">
