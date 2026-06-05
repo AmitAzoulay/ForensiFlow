@@ -111,9 +111,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
                 {messages.map((msg, idx) => {
                     if (idx === 0 && msg.content.includes("single-paragraph forensic summary")) return null;
 
+                    let displayContent = msg.content;
+                    if (msg.role === 'user' && msg.content.includes("TACTICAL ANALYSIS REQUIRED:")) {
+                        displayContent = "🔍 Analyzing selected item..."; 
+                    }
+
                     return (
                         <div key={idx} className={`ai-message ${msg.role}`}>
-                            {msg.content}
+                            {displayContent}
                         </div>
                     );
                 })}
