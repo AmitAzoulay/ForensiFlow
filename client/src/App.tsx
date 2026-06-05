@@ -91,7 +91,7 @@ function App() {
     if (type === 'node') {
       const nodeName = data.properties?.name || data.name || data.id;
       setExternalAIPrompt({
-        text: `Please investigate node "${nodeName}". Focus on this node, its connected entities, and related chronological graph logs.`,
+        text: `TACTICAL ANALYSIS REQUIRED: I am investigating the entity "${nodeName}".\nDO NOT define what this entity is. Focus on this node, its connected entities, and related chronological graph logs you have in your context.\n\nTell me:\n1. Why would an attacker target or use this entity?\n2. What specific anomalies or connections should I look for NEXT in the graph to confirm suspicious activity?`,
         timestamp: Date.now()
       });
     } else if (type === 'link') {
@@ -101,7 +101,7 @@ function App() {
       const actionType = data?.type || "Unknown Action";
 
       setExternalAIPrompt({
-        text: `I am looking at a specific log event: ${sourceName} -> ${actionType} -> ${targetName}.\nHere is the full telemetry for this event:\n${logDetails}\n\nPlease perform a detailed forensic investigation on this specific event. Focus on anomaly indicators, potential threat relevance, and its overall context.`,
+        text: `TACTICAL ANALYSIS REQUIRED: I am investigating this interaction: ${sourceName} -> ${actionType} -> ${targetName}.\nTelemetry: ${logDetails}\n\nDO NOT explain what this log means (I already know). Focus on this interaction and the related chronological graph logs you have in your context.\n\nIn 2-3 concise sentences, tell me: \n1. Why might an attacker do this? (Tactical significance)\n2. What specific event or anomaly should I search for NEXT in the graph to confirm malicious intent?`,
         timestamp: Date.now()
       });
     }
