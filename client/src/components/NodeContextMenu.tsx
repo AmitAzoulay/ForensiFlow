@@ -158,7 +158,7 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 </>
             )}
 
-            {targetType === 'node' && targetData && onIsolateLineage && (
+            {targetType === 'node' && targetData && targetData.label?.toLowerCase() === 'process' && onIsolateLineage && (
                 <button
                     className="menu-item"
                     onClick={() => {

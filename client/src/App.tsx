@@ -47,6 +47,7 @@ function App() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [loadingText, setLoadingText] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [isPlaybackMode, setIsPlaybackMode] = useState(false);
@@ -192,6 +193,7 @@ function App() {
   };
 
   const handleSaveEdited = async (newName: string) => {
+    setLoadingText('Saving investigation...');
     setIsSaving(true);
     const nodesToSave = filteredGraphData.nodes.map((n: any) => ({ id: n.id, label: n.label, properties: n.properties, is_red: n.is_red }));
     const linksToSave = filteredGraphData.links.map((l: any) => ({ id: l.id, source: l.source.id, target: l.target.id, type: l.type, details: l.details, is_red: l.is_red }));
@@ -208,6 +210,46 @@ function App() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    const redNodes = filteredGraphData.nodes.filter((n: any) => n.is_red);
+    const redLinks = filteredGraphData.links.filter((l: any) => l.is_red);
+
+    if (redNodes.length === 0 && redLinks.length === 0) {
+      alert("Please mark at least one entity or interaction as red to generate a report.");
+      return;
+    }
+
+    setLoadingText('Exporting report...');
+    setIsSaving(true); 
+
+    try {
+      const response = await fetch('http://localhost:8000/api/generate-forensic-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodes: redNodes, links: redLinks })
+      });
+
+      if (!response.ok) throw new Error("Failed to generate report from server");
+
+      // 2. מקבלים את קובץ האקסל מהשרת ומורידים אותו לדפדפן
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ForensiFlow_Incident_Report.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+    } catch (e) {
+      console.error(e);
+      alert("Error generating the report. Make sure the server is running.");
     } finally {
       setIsSaving(false);
     }
@@ -467,7 +509,7 @@ function App() {
               <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
             </svg>
             <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-            uploading investigation...
+            {loadingText}
           </div>
         </div>
       )}
@@ -542,6 +584,7 @@ function App() {
         onApplyNodeFilter={handleApplyNodeFilter}
         onApplyEdit={handleApplyEdit}
         onSaveEdited={handleSaveEdited}
+        onDownloadReport={handleDownloadReport}
         onIsolateLineage={(node) => setLineageTarget(node)}
       >
         <LogPanel
