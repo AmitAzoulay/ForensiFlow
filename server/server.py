@@ -140,7 +140,6 @@ def generate_forensic_report():
         red_nodes = data.get('nodes', [])
         red_links = data.get('links', [])
 
-        # 1. יצירת מילון לתרגום ID של Node לשם האמיתי שלו (למשל powershell.exe)
         node_map = {}
         for n in red_nodes:
             node_id = n.get('id')
@@ -178,28 +177,60 @@ def generate_forensic_report():
         # 3. הפקת הסיפור בעזרת ה-AI שלנו
         ai_narrative = generate_report_narrative(evidence_list)
 
-        # 4. בניית קובץ האקסל בזיכרון (בלי לשמור אותו על השרת)
+        # 4. בניית קובץ האקסל בזיכרון עם העיצוב המקצועי
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            
-            # טאב 1: סיכום מנהלים ונרטיב
-            summary_df = pd.DataFrame([{"AI Forensic Narrative": ai_narrative}])
-            summary_df.to_excel(writer, sheet_name='Executive Summary', index=False)
-            
-            # עיצוב הטאב הראשון (טקסט עוטף ושורה רחבה)
             workbook = writer.book
-            worksheet = writer.sheets['Executive Summary']
-            format_wrap = workbook.add_format({'text_wrap': True, 'valign': 'top'})
-            worksheet.set_column('A:A', 120, format_wrap)
             
-            # טאב 2: הראיות הגולמיות
+            # --- עיצובים (Styles) ---
+            title_format = workbook.add_format({'bold': True, 'font_size': 16, 'font_color': '#ffffff', 'bg_color': '#1e293b', 'align': 'left', 'valign': 'vcenter', 'indent': 1})
+            header_format = workbook.add_format({'bold': True, 'font_size': 12, 'font_color': '#ef4444', 'bottom': 1})
+            text_format = workbook.add_format({'text_wrap': True, 'valign': 'top', 'font_size': 11})
+            meta_format = workbook.add_format({'bold': True, 'font_color': '#64748b', 'font_size': 10})
+
+            # --- טאב 1: סיכום מנהלים ונרטיב (בנייה ידנית למראה מסמך) ---
+            worksheet_summary = workbook.add_worksheet('Executive Summary')
+            worksheet_summary.set_column('A:A', 120) # עמודה רחבה מאוד
+            worksheet_summary.hide_gridlines(2) # העלמת קווי הרשת של האקסל למראה נקי
+
+            # כותרת ראשית
+            worksheet_summary.write('A1', 'ForensiFlow - Automated Incident Report', title_format)
+            worksheet_summary.set_row(0, 30) # גובה שורת הכותרת
+
+            # מטא-דאטה (זמן הפקה וכמות ממצאים)
+            import datetime
+            generation_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            worksheet_summary.write('A2', f"Generated on: {generation_time} | Flagged Events: {len(evidence_list)}", meta_format)
+            worksheet_summary.set_row(1, 20)
+
+            # פיצול וכתיבת הנרטיב
+            parts = ai_narrative.split('\n\n')
+            current_row = 4
+            for part in parts:
+                if "Executive Summary" in part or "Chronological Narrative" in part:
+                    worksheet_summary.write(current_row, 0, part.strip(), header_format)
+                else:
+                    worksheet_summary.write(current_row, 0, part.strip(), text_format)
+                    estimated_height = (len(part) / 100) * 15
+                    worksheet_summary.set_row(current_row, max(30, estimated_height))
+                current_row += 2
+                
+            # --- טאב 2: הראיות הגולמיות ---
             if evidence_list:
                 evidence_df = pd.DataFrame(evidence_list)
                 evidence_df.to_excel(writer, sheet_name='Raw Evidence', index=False)
                 worksheet_ev = writer.sheets['Raw Evidence']
-                worksheet_ev.set_column('A:E', 25) # הרחבת עמודות למראה מסודר
+                
+                table_header_format = workbook.add_format({'bold': True, 'bg_color': '#334155', 'font_color': 'white'})
+                for col_num, value in enumerate(evidence_df.columns.values):
+                    worksheet_ev.write(0, col_num, value, table_header_format)
+                
+                worksheet_ev.set_column('A:A', 25) 
+                worksheet_ev.set_column('B:D', 35) 
+                worksheet_ev.set_column('E:E', 15) 
+                worksheet_ev.autofilter(0, 0, len(evidence_list), len(evidence_df.columns) - 1)
 
-        # שליחת הקובץ בחזרה ל-React להורדה
+        # --- השורות שהיו חסרות! שולחים את הקובץ ל-React ---
         output.seek(0)
         return send_file(
             output, 
