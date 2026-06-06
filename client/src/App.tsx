@@ -213,6 +213,47 @@ function App() {
     }
   };
 
+  const handleDownloadReport = async () => {
+    // 1. אוספים רק את מה שסומן באדום (הראיות)
+    const redNodes = filteredGraphData.nodes.filter((n: any) => n.is_red);
+    const redLinks = filteredGraphData.links.filter((l: any) => l.is_red);
+
+    if (redNodes.length === 0 && redLinks.length === 0) {
+      alert("Please mark at least one entity or interaction as red to generate a report.");
+      return;
+    }
+
+    // משתמשים בסטייט של הטעינה כדי שהמשתמש יראה שקורה משהו
+    setIsSaving(true); 
+
+    try {
+      const response = await fetch('http://localhost:8000/api/generate-forensic-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodes: redNodes, links: redLinks })
+      });
+
+      if (!response.ok) throw new Error("Failed to generate report from server");
+
+      // 2. מקבלים את קובץ האקסל מהשרת ומורידים אותו לדפדפן
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ForensiFlow_Incident_Report.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+    } catch (e) {
+      console.error(e);
+      alert("Error generating the report. Make sure the server is running.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleGoBack = () => {
     if (pastHistory.length === 0) return;
     const current = { searchQuery, activeFilters, timeRange };
@@ -542,6 +583,7 @@ function App() {
         onApplyNodeFilter={handleApplyNodeFilter}
         onApplyEdit={handleApplyEdit}
         onSaveEdited={handleSaveEdited}
+        onDownloadReport={handleDownloadReport}
         onIsolateLineage={(node) => setLineageTarget(node)}
       >
         <LogPanel
