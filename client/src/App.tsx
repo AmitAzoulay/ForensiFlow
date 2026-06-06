@@ -47,6 +47,7 @@ function App() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [loadingText, setLoadingText] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [isPlaybackMode, setIsPlaybackMode] = useState(false);
@@ -192,6 +193,7 @@ function App() {
   };
 
   const handleSaveEdited = async (newName: string) => {
+    setLoadingText('Saving investigation...');
     setIsSaving(true);
     const nodesToSave = filteredGraphData.nodes.map((n: any) => ({ id: n.id, label: n.label, properties: n.properties, is_red: n.is_red }));
     const linksToSave = filteredGraphData.links.map((l: any) => ({ id: l.id, source: l.source.id, target: l.target.id, type: l.type, details: l.details, is_red: l.is_red }));
@@ -214,7 +216,6 @@ function App() {
   };
 
   const handleDownloadReport = async () => {
-    // 1. אוספים רק את מה שסומן באדום (הראיות)
     const redNodes = filteredGraphData.nodes.filter((n: any) => n.is_red);
     const redLinks = filteredGraphData.links.filter((l: any) => l.is_red);
 
@@ -223,7 +224,7 @@ function App() {
       return;
     }
 
-    // משתמשים בסטייט של הטעינה כדי שהמשתמש יראה שקורה משהו
+    setLoadingText('Exporting report...');
     setIsSaving(true); 
 
     try {
@@ -508,7 +509,7 @@ function App() {
               <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
             </svg>
             <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-            uploading investigation...
+            {loadingText}
           </div>
         </div>
       )}
