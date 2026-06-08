@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import './TimelineFilter.css';
+import './TimeLineFilter.css';
 
 interface TimelineFilterProps {
     minTime: number;
