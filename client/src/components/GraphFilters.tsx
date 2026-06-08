@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import './GraphFilters.css';
 import TimeLineFilter from './TimeLineFilter';
+
+interface Suggestion {
+    label: string;
+    badge: string;
+    completion: string;
+}
 
 interface GraphFiltersProps {
     searchQuery: string;
@@ -9,6 +15,7 @@ interface GraphFiltersProps {
     onToggleFilter: (category: string) => void;
     onClearFilters: () => void;
     nodes: any[];
+    links: any[];
     globalTimeBounds: { min: number; max: number } | null;
     timeRange: { start: number; end: number } | null;
     onTimeRangeChange: (start: number, end: number) => void;
@@ -16,6 +23,78 @@ interface GraphFiltersProps {
     onGoBack?: () => void;
     canGoForward?: boolean;
     onGoForward?: () => void;
+    savedQueries: Array<{ id: string; query: string; label?: string }>;
+    activeSavedQueryIds: string[];
+    onSaveQuery: () => void;
+    onToggleSavedQuery: (id: string) => void;
+    onDeleteSavedQuery: (id: string) => void;
+    onRenameQuery: (id: string, newName: string) => void;
+}
+
+const EXCLUDED_FIELDS = new Set(['event_id', 'EventID', 'timestamp']);
+
+function getTokenAtEnd(query: string): { token: string; start: number } {
+    let start = query.length;
+    while (start > 0 && !/[\s()]/.test(query[start - 1])) start--;
+    return { token: query.slice(start), start };
+}
+
+function computeSuggestions(token: string, links: any[], hasContentBefore: boolean): Suggestion[] {
+    // Phase 2: identifier.field_prefix
+    const fieldMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+)\.([a-zA-Z0-9_]*)$/);
+    if (fieldMatch) {
+        const [, id, fieldPrefix] = fieldMatch;
+        const isNumeric = /^\d+$/.test(id);
+        const matchingLinks = links.filter(l =>
+            isNumeric
+                ? (l.details?.event_id?.toString() === id || l.details?.EventID?.toString() === id)
+                : (l.type || '').toLowerCase() === id.toLowerCase()
+        );
+        const nodeFields = ['src', 'target']
+            .filter(f => f.startsWith(fieldPrefix.toLowerCase()))
+            .map(f => ({ label: `${f}==`, badge: 'node', completion: `${id}.${f}==` }));
+
+        const detailFields = [...new Set(
+            matchingLinks
+                .flatMap(l => Object.keys(l.details || {}))
+                .filter(f => !EXCLUDED_FIELDS.has(f) && f.toLowerCase().startsWith(fieldPrefix.toLowerCase()))
+        )]
+            .slice(0, 8 - nodeFields.length)
+            .map(f => ({ label: `${f}==`, badge: 'field', completion: `${id}.${f}==` }));
+
+        return [...nodeFields, ...detailFields];
+    }
+
+    // Phase 1: identifier prefix
+    const idMatch = token.match(/^([a-zA-Z0-9_]*)$/);
+    if (!idMatch) return [];
+
+    const prefix = idMatch[1].toLowerCase();
+    const results: Suggestion[] = [];
+
+    if (hasContentBefore) {
+        ['AND', 'OR', 'NOT']
+            .filter(op => op.toLowerCase().startsWith(prefix))
+            .forEach(op => results.push({ label: op, badge: 'op', completion: `${op} ` }));
+    }
+
+    const actionNames = [...new Set(links.map(l => l.type).filter(Boolean))] as string[];
+    actionNames
+        .filter(t => t.toLowerCase().startsWith(prefix))
+        .slice(0, 6)
+        .forEach(a => results.push({ label: `${a}.`, badge: 'action', completion: `${a}.` }));
+
+    const eventIds = [...new Set(
+        links
+            .map(l => l.details?.event_id?.toString() || l.details?.EventID?.toString())
+            .filter(Boolean)
+    )] as string[];
+    eventIds
+        .filter(id => id.startsWith(prefix))
+        .slice(0, 4)
+        .forEach(id => results.push({ label: `${id}.`, badge: 'event', completion: `${id}.` }));
+
+    return results;
 }
 
 const GraphFilters: React.FC<GraphFiltersProps> = ({
@@ -25,14 +104,28 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     onToggleFilter,
     onClearFilters,
     nodes,
+    links,
     globalTimeBounds,
     timeRange,
     onTimeRangeChange,
     canGoBack,
     onGoBack,
     canGoForward,
-    onGoForward
+    onGoForward,
+    savedQueries,
+    activeSavedQueryIds,
+    onSaveQuery,
+    onToggleSavedQuery,
+    onDeleteSavedQuery,
+    onRenameQuery
 }) => {
+    const [suggestionIndex, setSuggestionIndex] = useState(-1);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editingValue, setEditingValue] = useState('');
+    const renameInputRef = useRef<HTMLInputElement>(null);
 
     const categories = [
         { id: 'user', label: 'Users' },
@@ -45,6 +138,68 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
         { id: 'task', label: 'Scheduled Tasks' }
     ];
 
+    const { token, start: tokenStart } = useMemo(
+        () => getTokenAtEnd(searchQuery),
+        [searchQuery]
+    );
+
+    const hasContentBefore = useMemo(() => {
+        if (tokenStart === 0) return false;
+        const lastMeaningfulChar = searchQuery.slice(0, tokenStart).trimEnd().slice(-1);
+        return lastMeaningfulChar !== '' && lastMeaningfulChar !== '(';
+    }, [searchQuery, tokenStart]);
+
+    const suggestions = useMemo(
+        () => computeSuggestions(token, links, hasContentBefore),
+        [token, links, hasContentBefore]
+    );
+
+    const applySuggestion = useCallback((suggestion: Suggestion) => {
+        const newQuery = searchQuery.slice(0, tokenStart) + suggestion.completion;
+        onSearchChange(newQuery);
+        setSuggestionIndex(-1);
+        setShowSuggestions(true);
+        requestAnimationFrame(() => inputRef.current?.focus());
+    }, [searchQuery, tokenStart, onSearchChange]);
+
+    const handleGlobalKeyDown = useCallback((e: KeyboardEvent) => {
+        if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            inputRef.current?.focus();
+        }
+    }, []);
+
+    React.useEffect(() => {
+        document.addEventListener('keydown', handleGlobalKeyDown);
+        return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [handleGlobalKeyDown]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        onSearchChange(e.target.value);
+        setSuggestionIndex(-1);
+        setShowSuggestions(true);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (!showSuggestions || suggestions.length === 0) return;
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            if (e.shiftKey) {
+                setSuggestionIndex(prev => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+            } else {
+                setSuggestionIndex(prev => (prev >= suggestions.length - 1 ? 0 : prev + 1));
+            }
+        } else if ((e.key === 'ArrowRight' || e.key === 'Enter') && suggestionIndex >= 0) {
+            e.preventDefault();
+            applySuggestion(suggestions[suggestionIndex]);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setShowSuggestions(false);
+            setSuggestionIndex(-1);
+        }
+    };
+
     return (
         <div className="filters-wrapper">
             <div className="filter-chips-row">
@@ -52,7 +207,6 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                 {categories.map(cat => {
                     const count = nodes.filter((n: any) => n.label?.toLowerCase() === cat.id).length;
                     if (count === 0) return null;
-
                     return (
                         <button
                             key={cat.id}
@@ -96,13 +250,48 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
             <div className="advanced-filters-row">
                 <div className="search-group">
                     <span className="filter-label">ADVANCED:</span>
-                    <input
-                        type="text"
-                        className="modern-input"
-                        placeholder="Search OR format: 4688.ProcessName==cmd.exe"
-                        value={searchQuery}
-                        onChange={(e) => onSearchChange(e.target.value)}
-                    />
+                    <div className="search-input-wrapper">
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            className="modern-input"
+                            placeholder="Example: PROCESS_CREATED.src==chrome.exe"
+                            value={searchQuery}
+                            onChange={handleChange}
+                            onKeyDown={handleKeyDown}
+                            onFocus={() => setShowSuggestions(true)}
+                            onBlur={() => setShowSuggestions(false)}
+                        />
+                        <button
+                            className="save-query-btn"
+                            onClick={onSaveQuery}
+                            disabled={!searchQuery.trim()}
+                            title="Save current query as a tab"
+                        >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"/>
+                            </svg>
+                            Save
+                        </button>
+                        {showSuggestions && suggestions.length > 0 && (
+                            <div className="autocomplete-dropdown" style={{ right: 'auto', width: inputRef.current?.offsetWidth }}>
+                                {suggestions.map((s, i) => (
+                                    <div
+                                        key={i}
+                                        className={`autocomplete-item${i === suggestionIndex ? ' active' : ''}`}
+                                        onMouseDown={e => e.preventDefault()}
+                                        onClick={() => applySuggestion(s)}
+                                    >
+                                        <span className="autocomplete-label">{s.label}</span>
+                                        <span className={`autocomplete-badge badge-${s.badge}`}>{s.badge}</span>
+                                    </div>
+                                ))}
+                                <div className="autocomplete-hint">
+                                    Tab / Shift+Tab to navigate &nbsp;&middot;&nbsp; Enter / &rarr; to accept &nbsp;&middot;&nbsp; Esc to close
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {globalTimeBounds && timeRange && (
@@ -117,6 +306,67 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                     </div>
                 )}
             </div>
+
+            {savedQueries.length > 0 && (
+                <div className="saved-queries-row">
+                    <span className="filter-label">SAVED:</span>
+                    {savedQueries.map(q => {
+                        const isEditing = editingId === q.id;
+                        const isActive = activeSavedQueryIds.includes(q.id);
+                        const displayLabel = q.label ?? q.query;
+
+                        const startEdit = () => {
+                            setEditingId(q.id);
+                            setEditingValue(q.label ?? q.query);
+                            requestAnimationFrame(() => renameInputRef.current?.select());
+                        };
+
+                        const commitEdit = () => {
+                            if (editingValue.trim()) onRenameQuery(q.id, editingValue.trim());
+                            setEditingId(null);
+                        };
+
+                        const cancelEdit = () => setEditingId(null);
+
+                        return (
+                            <div
+                                key={q.id}
+                                className={`saved-query-tab${isActive ? ' active' : ''}`}
+                                onClick={() => !isEditing && onToggleSavedQuery(q.id)}
+                                onContextMenu={e => { e.preventDefault(); startEdit(); }}
+                                title={q.query}
+                            >
+                                {isEditing ? (
+                                    <input
+                                        ref={renameInputRef}
+                                        className="saved-query-rename-input"
+                                        value={editingValue}
+                                        onChange={e => setEditingValue(e.target.value)}
+                                        onBlur={commitEdit}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+                                            if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+                                            e.stopPropagation();
+                                        }}
+                                        onClick={e => e.stopPropagation()}
+                                        onMouseDown={e => e.stopPropagation()}
+                                    />
+                                ) : (
+                                    <span className="saved-query-label">{displayLabel}</span>
+                                )}
+                                <button
+                                    className="saved-query-delete"
+                                    onMouseDown={e => e.stopPropagation()}
+                                    onClick={e => { e.stopPropagation(); onDeleteSavedQuery(q.id); }}
+                                    title="Remove"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 };

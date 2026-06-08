@@ -12,6 +12,53 @@ interface ViewState {
   timeRange: { start: number; end: number } | null;
 }
 
+type QueryToken =
+  | { type: 'AND' | 'OR' | 'NOT' | 'LPAREN' | 'RPAREN' }
+  | { type: 'TERM'; value: string };
+
+function tokenize(query: string): QueryToken[] {
+  const tokens: QueryToken[] = [];
+  let i = 0;
+  while (i < query.length) {
+    if (/\s/.test(query[i])) { i++; continue; }
+    if (query[i] === '(') { tokens.push({ type: 'LPAREN' }); i++; continue; }
+    if (query[i] === ')') { tokens.push({ type: 'RPAREN' }); i++; continue; }
+    const start = i;
+    // Read initial word; pass through quoted sections so "path with spaces" stays together
+    while (i < query.length && !/[\s()]/.test(query[i])) {
+      if (query[i] === '"' || query[i] === "'") {
+        const q = query[i++];
+        while (i < query.length && query[i] !== q) i++;
+        if (i < query.length) i++; // closing quote
+      } else {
+        i++;
+      }
+    }
+    const word = query.slice(start, i);
+    // If this word is a field filter (contains ==), greedily absorb the rest of
+    // the value even if it has spaces — stop only at ), AND, OR, NOT
+    if (word.includes('==')) {
+      while (i < query.length) {
+        let j = i;
+        while (j < query.length && /\s/.test(query[j])) j++;
+        if (j >= query.length || query[j] === ')') break;
+        let k = j;
+        while (k < query.length && !/[\s()]/.test(query[k])) k++;
+        const next = query.slice(j, k).toLowerCase();
+        if (next === 'and' || next === 'or' || next === 'not') break;
+        i = k;
+      }
+      tokens.push({ type: 'TERM', value: query.slice(start, i) });
+    } else {
+      if (word.toLowerCase() === 'and') tokens.push({ type: 'AND' });
+      else if (word.toLowerCase() === 'or') tokens.push({ type: 'OR' });
+      else if (word.toLowerCase() === 'not' || word === '!') tokens.push({ type: 'NOT' });
+      else tokens.push({ type: 'TERM', value: word });
+    }
+  }
+  return tokens;
+}
+
 const extractTimestamp = (obj: any): number | null => {
   if (!obj) return null;
   if (obj.timestamp) return new Date(obj.timestamp).getTime();
@@ -37,6 +84,9 @@ function App() {
   const [pastHistory, setPastHistory] = useState<ViewState[]>([]);
   const [futureHistory, setFutureHistory] = useState<ViewState[]>([]);
 
+  const [savedQueries, setSavedQueries] = useState<Array<{ id: string; query: string; label?: string }>>([]);
+  const [activeSavedQueryIds, setActiveSavedQueryIds] = useState<string[]>([]);
+
   const [edits, setEdits] = useState({
     redNodes: new Set<string>(),
     redLinks: new Set<string>(),
@@ -47,6 +97,7 @@ function App() {
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [loadingText, setLoadingText] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [isPlaybackMode, setIsPlaybackMode] = useState(false);
@@ -91,7 +142,7 @@ function App() {
     if (type === 'node') {
       const nodeName = data.properties?.name || data.name || data.id;
       setExternalAIPrompt({
-        text: `Please investigate node "${nodeName}". Focus on this node, its connected entities, and related chronological graph logs.`,
+        text: `TACTICAL ANALYSIS REQUIRED: I am investigating the entity "${nodeName}".\nDO NOT define what this entity is. Focus on this node, its connected entities, and related chronological graph logs you have in your context.\n\nTell me:\n1. Why would an attacker target or use this entity?\n2. What specific anomalies or connections should I look for NEXT in the graph to confirm suspicious activity?`,
         timestamp: Date.now()
       });
     } else if (type === 'link') {
@@ -101,7 +152,7 @@ function App() {
       const actionType = data?.type || "Unknown Action";
 
       setExternalAIPrompt({
-        text: `I am looking at a specific log event: ${sourceName} -> ${actionType} -> ${targetName}.\nHere is the full telemetry for this event:\n${logDetails}\n\nPlease perform a detailed forensic investigation on this specific event. Focus on anomaly indicators, potential threat relevance, and its overall context.`,
+        text: `TACTICAL ANALYSIS REQUIRED: I am investigating this interaction: ${sourceName} -> ${actionType} -> ${targetName}.\nTelemetry: ${logDetails}\n\nDO NOT explain what this log means (I already know). Focus on this interaction and the related chronological graph logs you have in your context.\n\nIn 2-3 concise sentences, tell me: \n1. Why might an attacker do this? (Tactical significance)\n2. What specific event or anomaly should I search for NEXT in the graph to confirm malicious intent?`,
         timestamp: Date.now()
       });
     }
@@ -192,6 +243,7 @@ function App() {
   };
 
   const handleSaveEdited = async (newName: string) => {
+    setLoadingText('Saving investigation...');
     setIsSaving(true);
     const nodesToSave = filteredGraphData.nodes.map((n: any) => ({ id: n.id, label: n.label, properties: n.properties, is_red: n.is_red }));
     const linksToSave = filteredGraphData.links.map((l: any) => ({ id: l.id, source: l.source.id, target: l.target.id, type: l.type, details: l.details, is_red: l.is_red }));
@@ -208,6 +260,46 @@ function App() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    const redNodes = filteredGraphData.nodes.filter((n: any) => n.is_red);
+    const redLinks = filteredGraphData.links.filter((l: any) => l.is_red);
+
+    if (redNodes.length === 0 && redLinks.length === 0) {
+      alert("Please mark at least one entity or interaction as red to generate a report.");
+      return;
+    }
+
+    setLoadingText('Exporting report...');
+    setIsSaving(true); 
+
+    try {
+      const response = await fetch('http://localhost:8000/api/generate-forensic-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodes: redNodes, links: redLinks })
+      });
+
+      if (!response.ok) throw new Error("Failed to generate report from server");
+
+      // 2. מקבלים את קובץ האקסל מהשרת ומורידים אותו לדפדפן
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ForensiFlow_Incident_Report.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+    } catch (e) {
+      console.error(e);
+      alert("Error generating the report. Make sure the server is running.");
     } finally {
       setIsSaving(false);
     }
@@ -241,6 +333,29 @@ function App() {
     }
   };
 
+  const handleSaveQuery = () => {
+    if (!searchQuery.trim()) return;
+    const id = Date.now().toString();
+    setSavedQueries(prev => [...prev, { id, query: searchQuery.trim() }]);
+    setActiveSavedQueryIds(prev => [...prev, id]);
+    setSearchQuery('');
+  };
+
+  const handleToggleSavedQuery = (id: string) => {
+    setActiveSavedQueryIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSavedQuery = (id: string) => {
+    setSavedQueries(prev => prev.filter(q => q.id !== id));
+    setActiveSavedQueryIds(prev => prev.filter(x => x !== id));
+  };
+
+  const handleRenameQuery = (id: string, newName: string) => {
+    setSavedQueries(prev => prev.map(q => q.id === id ? { ...q, label: newName } : q));
+  };
+
   useEffect(() => {
     if (!rawGraphData || !rawGraphData.links || rawGraphData.links.length === 0) {
       setGlobalTimeBounds(null);
@@ -271,6 +386,115 @@ function App() {
     let baseNodes = rawGraphData.nodes.filter((n: any) => !edits.deletedNodes.has(n.id));
     let baseLinks = rawGraphData.links.filter((l: any) => !edits.deletedLinks.has(l.id));
 
+    // All active query strings: current input + selected saved queries
+    const activeQueries = [
+      searchQuery,
+      ...savedQueries.filter(q => activeSavedQueryIds.includes(q.id)).map(q => q.query)
+    ].filter(q => q.trim() !== '');
+
+    const evaluateTerm = (term: string, link: any): boolean => {
+      let isNot = false;
+      let cleanTerm = term.trim();
+      if (cleanTerm.toLowerCase().startsWith('not ')) {
+        isNot = true;
+        cleanTerm = cleanTerm.substring(4).trim();
+      } else if (cleanTerm.startsWith('!')) {
+        isNot = true;
+        cleanTerm = cleanTerm.substring(1).trim();
+      }
+      if (!cleanTerm) return true;
+      let matchResult = false;
+      const advancedPattern = /^(\d+|[a-zA-Z][a-zA-Z0-9_]*|\*)\.([a-zA-Z0-9_]+)\s*==\s*(.+)$/i;
+      const advancedMatch = cleanTerm.match(advancedPattern);
+      if (advancedMatch) {
+        const targetIdentifier = advancedMatch[1];
+        const targetField = advancedMatch[2];
+        let rawValue = advancedMatch[3];
+        // Strip balanced surrounding quotes ("value" or 'value')
+        if (rawValue.length >= 2 &&
+            ((rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+             (rawValue.startsWith("'") && rawValue.endsWith("'")))) {
+          rawValue = rawValue.slice(1, -1);
+        }
+        const targetValue = rawValue.toLowerCase();
+        const details = link.details || {};
+        const isNumericId = /^\d+$/.test(targetIdentifier);
+        let identifierMatches: boolean;
+        if (targetIdentifier === '*') {
+          identifierMatches = true;
+        } else if (isNumericId) {
+          const evId = details.event_id?.toString() || details.EventID?.toString() || "";
+          identifierMatches = evId === targetIdentifier;
+        } else {
+          identifierMatches = (link.type || "").toLowerCase() === targetIdentifier.toLowerCase();
+        }
+        const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+        const dstId = typeof link.target === 'object' ? link.target.id : link.target;
+        const srcNode = baseNodes.find((n: any) => n.id === srcId);
+        const dstNode = baseNodes.find((n: any) => n.id === dstId);
+        if (identifierMatches && (targetField === 'src' || targetField === 'source')) {
+          const name = (srcNode?.properties?.name || '').toLowerCase();
+          matchResult = name.includes(targetValue);
+        } else if (identifierMatches && (targetField === 'target' || targetField === 'dst')) {
+          const name = (dstNode?.properties?.name || '').toLowerCase();
+          matchResult = name.includes(targetValue);
+        } else if (identifierMatches && (targetField in details)) {
+          const actualValue = details[targetField]?.toString().toLowerCase() || "";
+          matchResult = actualValue.includes(targetValue) || actualValue === targetValue;
+        } else {
+          matchResult = false;
+        }
+      } else {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        const sourceNode = baseNodes.find((n: any) => n.id === sourceId);
+        const targetNode = baseNodes.find((n: any) => n.id === targetId);
+        const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
+        matchResult = searchableText.includes(cleanTerm.toLowerCase());
+      }
+      return isNot ? !matchResult : matchResult;
+    };
+
+    const evalQuery = (query: string, link: any): boolean => {
+      const tokens = tokenize(query);
+      let pos = 0;
+      function peek() { return tokens[pos]; }
+      function consume() { return tokens[pos++]; }
+      function parseOr(): boolean {
+        let result = parseAnd();
+        while (peek()?.type === 'OR') { consume(); result = result || parseAnd(); }
+        return result;
+      }
+      function parseAnd(): boolean {
+        let result = parseNot();
+        while (peek()?.type === 'AND') { consume(); result = result && parseNot(); }
+        return result;
+      }
+      function parseNot(): boolean {
+        if (peek()?.type === 'NOT') { consume(); return !parseNot(); }
+        return parsePrimary();
+      }
+      function parsePrimary(): boolean {
+        const token = peek();
+        if (!token) return true;
+        if (token.type === 'LPAREN') {
+          consume();
+          const result = parseOr();
+          if (peek()?.type === 'RPAREN') consume();
+          return result;
+        }
+        if (token.type === 'TERM') { consume(); return evaluateTerm(token.value, link); }
+        consume();
+        return true;
+      }
+      return tokens.length === 0 ? true : parseOr();
+    };
+
+    const matchesAnyQuery = (link: any): boolean => {
+      if (activeQueries.length === 0) return true;
+      return activeQueries.some(query => evalQuery(query, link));
+    };
+
     let validLinks = baseLinks.filter((link: any) => {
       if (timeRange) {
         const t = extractTimestamp(link);
@@ -278,51 +502,7 @@ function App() {
           return false;
         }
       }
-      if (searchQuery.trim() !== '') {
-        const query = searchQuery.trim();
-        const evaluateTerm = (term: string) => {
-          let isNot = false;
-          let cleanTerm = term.trim();
-          if (cleanTerm.toLowerCase().startsWith('not ')) {
-            isNot = true;
-            cleanTerm = cleanTerm.substring(4).trim();
-          } else if (cleanTerm.startsWith('!')) {
-            isNot = true;
-            cleanTerm = cleanTerm.substring(1).trim();
-          }
-          if (!cleanTerm) return true;
-          let matchResult = false;
-          const advancedPattern = /^(\d+|\*)\.([a-zA-Z0-9_]+)\s*==\s*(["']?)(.*)\3$/i;
-          const advancedMatch = cleanTerm.match(advancedPattern);
-          if (advancedMatch) {
-            const targetEventId = advancedMatch[1];
-            const targetField = advancedMatch[2];
-            const targetValue = advancedMatch[4].toLowerCase();
-            const details = link.details || {};
-            const evId = details.event_id?.toString() || details.EventID?.toString() || "";
-            if ((evId === targetEventId || targetEventId === '*') && (targetField in details)) {
-              const actualValue = details[targetField]?.toString().toLowerCase() || "";
-              matchResult = actualValue.includes(targetValue) || actualValue === targetValue;
-            } else {
-              matchResult = false;
-            }
-          } else {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            const sourceNode = baseNodes.find((n: any) => n.id === sourceId);
-            const targetNode = baseNodes.find((n: any) => n.id === targetId);
-            const searchableText = `${sourceNode?.properties?.name || ''} ${targetNode?.properties?.name || ''} ${link.type || ''} ${link.details?.event_id || ''}`.toLowerCase();
-            matchResult = searchableText.includes(cleanTerm.toLowerCase());
-          }
-          return isNot ? !matchResult : matchResult;
-        };
-        const orGroups = query.split(/\s+or\s+/i);
-        const passedSearch = orGroups.some(orGroup => {
-          const andTerms = orGroup.split(/\s+and\s+/i);
-          return andTerms.every(term => evaluateTerm(term));
-        });
-        if (!passedSearch) return false;
-      }
+      if (!matchesAnyQuery(link)) return false;
       return true;
     });
 
@@ -349,7 +529,7 @@ function App() {
     } else {
       const isTimeFiltered = timeRange && globalTimeBounds &&
         (timeRange.start > globalTimeBounds.min || timeRange.end < globalTimeBounds.max);
-      if (searchQuery.trim() !== '' || isTimeFiltered) {
+      if (activeQueries.length > 0 || isTimeFiltered) {
         const linkedNodeIds = new Set();
         finalLinks.forEach((l: any) => {
           linkedNodeIds.add(typeof l.source === 'object' ? l.source.id : l.source);
@@ -368,7 +548,7 @@ function App() {
     });
 
     return { nodes: finalNodes, links: finalLinks };
-  }, [rawGraphData, searchQuery, activeFilters, timeRange, globalTimeBounds, edits]);
+  }, [rawGraphData, searchQuery, savedQueries, activeSavedQueryIds, activeFilters, timeRange, globalTimeBounds, edits]);
 
   const playbackSequence = useMemo(() => {
     const redLinks = filteredGraphData.links.filter((l: any) => l.is_red);
@@ -441,6 +621,7 @@ function App() {
       onToggleFilter={toggleFilter}
       onClearFilters={() => setActiveFilters([])}
       nodes={rawGraphData.nodes}
+      links={rawGraphData.links}
       globalTimeBounds={globalTimeBounds}
       timeRange={timeRange}
       onTimeRangeChange={(start, end) => setTimeRange({ start, end })}
@@ -448,6 +629,12 @@ function App() {
       onGoBack={handleGoBack}
       canGoForward={futureHistory.length > 0}
       onGoForward={handleGoForward}
+      savedQueries={savedQueries}
+      activeSavedQueryIds={activeSavedQueryIds}
+      onSaveQuery={handleSaveQuery}
+      onToggleSavedQuery={handleToggleSavedQuery}
+      onDeleteSavedQuery={handleDeleteSavedQuery}
+      onRenameQuery={handleRenameQuery}
     />
   ) : null;
 
@@ -467,7 +654,7 @@ function App() {
               <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
             </svg>
             <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-            uploading investigation...
+            {loadingText}
           </div>
         </div>
       )}
@@ -542,6 +729,7 @@ function App() {
         onApplyNodeFilter={handleApplyNodeFilter}
         onApplyEdit={handleApplyEdit}
         onSaveEdited={handleSaveEdited}
+        onDownloadReport={handleDownloadReport}
         onIsolateLineage={(node) => setLineageTarget(node)}
       >
         <LogPanel

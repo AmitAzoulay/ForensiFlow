@@ -189,6 +189,7 @@ interface GraphPanelProps {
     activePlaybackLinkIds?: Set<string>;
     hasRedItems?: boolean;
     hasExistingQuery?: boolean;
+    onDownloadReport?: () => void;
     onStartPlayback?: () => void;
     onLinkClick: (link: any) => void;
     onDataLoaded: (data: any, caseId: string | null) => void;
@@ -210,6 +211,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     activePlaybackLinkIds,
     hasRedItems = false,
     hasExistingQuery = false,
+    onDownloadReport,
     onStartPlayback,
     onLinkClick,
     onDataLoaded,
@@ -234,11 +236,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     const [selectedGroup, setSelectedGroup] = useState<{ nodes: any[], links: any[] }>({ nodes: [], links: [] });
     const [isLasso, setIsLasso] = useState(false);
     const [lassoBox, setLassoBox] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
+    const [showHelp, setShowHelp] = useState(false);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
-    const pressTimer = useRef<any>(null);
-    const initialClick = useRef<{ x: number, y: number } | null>(null);
+    const isLassoRef = useRef(false);
     const hoveredItemRef = useRef<any>(null);
 
     useEffect(() => {
@@ -393,46 +395,39 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
 
     const handleContainerMouseDown = (e: React.MouseEvent) => {
         if (e.button !== 0 || isPlaybackMode) return;
+        if (!e.ctrlKey) return;
         if (hoveredItemRef.current) return;
 
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
 
+        e.preventDefault();
+        e.stopPropagation();
+
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        initialClick.current = { x: e.clientX, y: e.clientY };
-
-        pressTimer.current = setTimeout(() => {
-            setIsLasso(true);
-            setLassoBox({ x1: x, y1: y, x2: x, y2: y });
-            setSelectedGroup({ nodes: [], links: [] });
-            setContextMenu(null);
-            const canvas = containerRef.current?.querySelector('canvas');
-            if (canvas) canvas.style.cursor = 'crosshair';
-        }, 500);
+        isLassoRef.current = true;
+        setIsLasso(true);
+        setLassoBox({ x1: x, y1: y, x2: x, y2: y });
+        setSelectedGroup({ nodes: [], links: [] });
+        setContextMenu(null);
+        const canvas = containerRef.current?.querySelector('canvas');
+        if (canvas) canvas.style.cursor = 'crosshair';
     };
 
     const handleContainerMouseMove = (e: React.MouseEvent) => {
         if (isPlaybackMode) return;
-        if (isLasso) {
+        if (isLassoRef.current) {
             const rect = containerRef.current?.getBoundingClientRect();
             if (!rect) return;
             setLassoBox(prev => ({ ...prev, x2: e.clientX - rect.left, y2: e.clientY - rect.top }));
-        } else if (initialClick.current) {
-            const dx = Math.abs(e.clientX - initialClick.current.x);
-            const dy = Math.abs(e.clientY - initialClick.current.y);
-            if (dx > 5 || dy > 5) {
-                clearTimeout(pressTimer.current);
-                initialClick.current = null;
-            }
         }
     };
 
     const handleContainerMouseUp = () => {
         if (isPlaybackMode) return;
-        clearTimeout(pressTimer.current);
-        initialClick.current = null;
-        if (isLasso) {
+        if (isLassoRef.current) {
+            isLassoRef.current = false;
             setIsLasso(false);
             const canvas = containerRef.current?.querySelector('canvas');
             if (canvas) canvas.style.cursor = 'default';
@@ -530,12 +525,43 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
+                            
                             {caseId && !isPlaybackMode && hasRedItems && (
                                 <button className="btn-primary" onClick={onStartPlayback} style={{ marginLeft: '10px', background: 'linear-gradient(to right, #ef4444, #b91c1c)', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                     Play Attack Path
                                 </button>
                             )}
+                            
+                            {/* כפתור ההורדה החדש שלך */}
+                            {onDownloadReport && hasRedItems && !isPlaybackMode && (
+                                <button 
+                                    onClick={onDownloadReport}
+                                    title="Download Forensics Report"
+                                    style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center',
+                                        backgroundColor: 'white', 
+                                        color: '#334155', 
+                                        padding: '8px 12px', 
+                                        borderRadius: '6px', 
+                                        border: '1px solid #cbd5e1', 
+                                        cursor: 'pointer',
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                        marginLeft: '8px',
+                                        marginRight: '8px',
+                                        height: '36px'
+                                    }}
+                                >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                </button>
+                            )}
+
                             {caseId && (
                                 <button className="btn-secondary" onClick={triggerSave} disabled={isPlaybackMode} style={{ marginLeft: '10px' }}>
                                     Save Edited
@@ -678,6 +704,55 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 onApplyEdit={(action) => onApplyEdit(action, contextMenu.targetType, contextMenu.targetData)}
                                 onIsolateLineage={onIsolateLineage}
                             />
+                        )}
+
+                        <button
+                            className="help-btn"
+                            onClick={() => setShowHelp(v => !v)}
+                            title="Navigation help"
+                        >
+                            ?
+                        </button>
+
+                        {showHelp && (
+                            <div className="help-panel">
+                                <div className="help-panel-header">
+                                    <span>Help</span>
+                                    <button className="help-panel-close" onClick={() => setShowHelp(false)}>✕</button>
+                                </div>
+                                <div className="help-panel-section">Navigation</div>
+                                <ul className="help-list">
+                                    <li><kbd>Scroll</kbd> Zoom in / out</li>
+                                    <li><kbd>Drag canvas</kbd> Pan</li>
+                                    <li><kbd>Click node</kbd> Select &amp; view details</li>
+                                    <li><kbd>Right-click</kbd> Context menu</li>
+                                    <li><kbd>Ctrl + drag</kbd> Box-select multiple nodes</li>
+                                    <li><kbd>Drag node</kbd> Reposition node</li>
+                                </ul>
+                                <div className="help-panel-section">Search syntax</div>
+                                <ul className="help-list">
+                                    <li><kbd>term</kbd> Plain text search</li>
+                                    <li><kbd>A AND B</kbd> Both terms must match</li>
+                                    <li><kbd>A OR B</kbd> Either term matches</li>
+                                    <li><kbd>NOT A</kbd> Exclude term</li>
+                                    <li><kbd>(A OR B) AND C</kbd> Group with parentheses</li>
+                                    <li><kbd>type.field==val</kbd> Field filter by action name</li>
+                                    <li><kbd>4624.field==val</kbd> Field filter by event ID</li>
+                                    <li><kbd>*.field==val</kbd> Field filter, any event</li>
+                                    <li><kbd>type.src==name</kbd> Filter by source node name</li>
+                                    <li><kbd>type.target==name</kbd> Filter by destination node name</li>
+                                </ul>
+                                <div className="help-panel-section">Saved queries</div>
+                                <ul className="help-list">
+                                    <li><kbd>Save</kbd> Save current query as a tab</li>
+                                    <li><kbd>Click tab</kbd> Toggle tab on / off (OR with current query)</li>
+                                    <li><kbd>Right-click tab</kbd> Rename tab label</li>
+                                </ul>
+                                <div className="help-panel-section">Shortcuts</div>
+                                <ul className="help-list">
+                                    <li><kbd>/</kbd> Focus the search bar</li>
+                                </ul>
+                            </div>
                         )}
                     </div>
                 </div>

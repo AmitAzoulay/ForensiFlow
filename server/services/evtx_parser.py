@@ -116,12 +116,22 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
         proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
         obj_name = data_map.get('ObjectName', '')
         val_name = data_map.get('ObjectValueName', '')
-        
+        operation_type = data_map.get('OperationType', '').strip()
+
         reg_path = f"{obj_name}\\{val_name}" if val_name else obj_name
         if not reg_path or reg_path == "-": 
             reg_path = "Unknown_Registry_Key"
+
+        action_type = "REGISTRY_MODIFIED"
+        
+        if operation_type == '%%1904':
+            action_type = "REGISTRY_VALUE_CREATED"
+        elif operation_type == '%%1905':
+            action_type = "REGISTRY_VALUE_MODIFIED"
+        elif operation_type == '%%1906':
+            action_type = "REGISTRY_VALUE_DELETED"
             
-        _insert_graph_relationship(tx, case_id, "Process", proc, "Registry", reg_path, "REGISTRY_MODIFIED", details)
+        _insert_graph_relationship(tx, case_id, "Process", proc, "Registry", reg_path, action_type, details)
 
     elif event_id == '4720':
         src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
@@ -145,7 +155,27 @@ def _process_event_logic(tx, case_id, log, sid_map, proc_map):
     elif event_id == '4663':
         proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
         file_obj = data_map.get('ObjectName', 'Unknown_Object')
-        _insert_graph_relationship(tx, case_id, "Process", proc, "File", file_obj, "OBJECT_ACCESSED", details)
+        access_mask_str = data_map.get('AccessMask', '').strip().lower()
+        action_type = None
+
+        if access_mask_str.startswith('0x'):
+            try:
+                mask_val = int(access_mask_str, 16)
+                
+                if mask_val & 0x10000:
+                    action_type = "OBJECT_ACCESSED_DELETE"
+                elif mask_val & 0x2:
+                    action_type = "OBJECT_ACCESSED_WRITE"
+                elif mask_val & 0x4:
+                    action_type = "OBJECT_ACCESSED_APPEND"
+                elif mask_val & 0x1:
+                    action_type = "OBJECT_ACCESSED_READ"
+                elif mask_val & 0x20:
+                    action_type = "OBJECT_ACCESSED_EXECUTE"
+            except ValueError:
+                pass
+            if action_type:
+                _insert_graph_relationship(tx, case_id, "Process", proc, "File", file_obj, action_type, details)
     elif event_id == '1102':
         user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
         _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "AUDIT_LOG_CLEARED", details)
