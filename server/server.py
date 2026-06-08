@@ -12,7 +12,7 @@ from services.evtx_parser import parse_and_store_evtx
 import pandas as pd
 import io
 from flask import send_file
-from services.ai_agent import generate_forensic_response, generate_report_narrative
+from services.ai_agent import generate_forensic_response, generate_report_narrative, translate_single_log
 
 load_dotenv()
 
@@ -86,6 +86,23 @@ def upload_and_parse_evtx():
             logger.error(f"Parsing failed: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
         
+@app.route('/api/translate-log', methods=['POST'])
+def process_log_translation():
+    data = request.json
+    log_details = data.get('log_details')
+
+    if not log_details:
+        return jsonify({"error": "Missing log details"}), 400
+
+    try:
+        translation = translate_single_log(log_details)
+        return jsonify({"reply": translation}), 200
+    except Exception as e:
+        if str(e) == "RATE_LIMIT":
+            return jsonify({"reply": "AI rate limit reached. Please wait a minute."}), 429
+        logger.error(f"Translation error: {e}")
+        return jsonify({"error": "Failed to translate log"}), 500
+
 @app.route('/api/ai-chat', methods=['POST'])
 def process_ai_chat():
     data = request.json
@@ -103,7 +120,13 @@ def process_ai_chat():
         ai_reply = generate_forensic_response(timeline, chat_history)
         return jsonify({"reply": ai_reply}), 200
         
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            return jsonify({"reply": "AI is overloaded right now. Please wait 60 seconds."}), 429
+        return jsonify({"error": "Failed to process AI request"}), 500
     except Exception as e:
+        if "429" in str(e) or "RATE_LIMIT" in str(e):
+            return jsonify({"reply": "AI rate limit reached. Please wait 60 seconds."}), 429
         logger.error(f"AI Chat processing error: {e}")
         return jsonify({"error": "Failed to process AI request"}), 500
     

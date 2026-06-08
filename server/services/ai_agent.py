@@ -4,6 +4,36 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def translate_single_log(log_details):
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        return "API Key is missing."
+
+    system_prompt = "INSTRUCTION: Briefly explain this Windows event log in one simple sentence in English. No technical jargon. CRITICAL: Do not suggest next steps."
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": f"Telemetry: {log_details}"}]}],
+        "generationConfig": {"temperature": 0.2}
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        
+        if response.status_code == 429:
+            raise Exception("RATE_LIMIT")
+            
+        response.raise_for_status() 
+        response_data = response.json()
+        
+        return response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error generating translation.").strip()
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"HTTP request failed during single log translation: {e}")
+        raise
+    
 def generate_forensic_response(timeline_lines, chat_history):
     """
     Generates an AI response based on the forensic timeline and user chat history.

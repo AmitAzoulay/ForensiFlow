@@ -80,16 +80,27 @@ const LogPanel: React.FC<LogPanelProps> = ({
         setIsTranslating(true);
         try {
             const logDetails = JSON.stringify(selectedLink.details, null, 2);
-            const prompt = `INSTRUCTION: Briefly explain this Windows event log in one simple sentence in English. No technical jargon. CRITICAL: Do not suggest next steps. Telemetry: ${logDetails}`; 
-            
-            const response = await apiService.sendChatMessage(caseId, [{ role: 'user', content: prompt }]);
-            if (response.reply) {
-                setAiTranslation(response.reply);
+
+            const response = await fetch('http://localhost:8000/api/translate-log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ case_id: caseId, log_details: logDetails })
+            });
+
+            if (response.status === 429) {
+                setAiTranslation("Rate limit exceeded. Please wait a minute before requesting another explanation.");
+                setIsTranslating(false);
+                return;
+            }
+
+            const data = await response.json();
+            if (data.reply) {
+                setAiTranslation(data.reply);
             } else {
-                setAiTranslation("Failed to generate translation.");
+                setAiTranslation(`Error: ${data.error || 'Failed to translate'}`);
             }
         } catch (error) {
-            setAiTranslation("Error connecting to AI service.");
+            setAiTranslation("Error connecting to ForensiFlow AI server.");
         } finally {
             setIsTranslating(false);
         }
@@ -100,9 +111,9 @@ const LogPanel: React.FC<LogPanelProps> = ({
             <div className="log-panel-header">
                 <h2>Log Panel</h2>
                 {selectedLink && (
-                    <button 
-                        className="header-ai-btn" 
-                        onClick={handleTranslateLog} 
+                    <button
+                        className="header-ai-btn"
+                        onClick={handleTranslateLog}
                         disabled={isTranslating || !caseId}
                         data-tooltip="Explain with AI"
                     >
