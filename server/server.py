@@ -1,19 +1,16 @@
 import logging
 import os
 import uuid
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 from database import Neo4jClient
-from services.ai_agent import generate_forensic_response
-from services.evtx_parser import parse_and_store_evtx
-
+from services.ai_agent import generate_forensic_response, generate_report_narrative, translate_single_log
 import pandas as pd
 import io
 from flask import send_file
-from services.ai_agent import generate_forensic_response, generate_report_narrative, translate_single_log
-
 load_dotenv()
 
 logging.basicConfig(
