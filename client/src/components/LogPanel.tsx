@@ -76,13 +76,11 @@ const LogPanel: React.FC<LogPanelProps> = ({
     };
 
     const handleTranslateLog = async () => {
-        if (!selectedLink || !caseId) return;
+        if (!selectedLink) return;
         setIsTranslating(true);
         try {
-            const logDetails = JSON.stringify(selectedLink.details, null, 2);
-            const prompt = `INSTRUCTION: Briefly explain this Windows event log in one simple sentence in English. No technical jargon. CRITICAL: Do not suggest next steps. Telemetry: ${logDetails}`; 
-            
-            const response = await apiService.sendChatMessage(caseId, [{ role: 'user', content: prompt }]);
+            // קריאה ישירה לנתיב התרגום הנקודתי והמהיר
+            const response = await apiService.translateLog(selectedLink.details || {});
             if (response.reply) {
                 setAiTranslation(response.reply);
             } else {
@@ -93,7 +91,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
         } finally {
             setIsTranslating(false);
         }
-    };
+    }
 
     return (
         <div className="log-panel-sidebar">

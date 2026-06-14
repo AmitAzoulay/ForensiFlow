@@ -25,11 +25,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
         setMessages([]);
     }, [caseId]);
 
+    const [hasSentAutoSummary, setHasSentAutoSummary] = useState(false);
+
     useEffect(() => {
-        if (isOpen && messages.length === 0 && caseId) {
+        if (isOpen && messages.length === 0 && caseId && !hasSentAutoSummary) {
+            setHasSentAutoSummary(true);
             handleSendMessage("Provide a single-paragraph forensic summary of this investigation.");
         }
-    }, [isOpen, caseId, messages.length]);
+    }, [isOpen, caseId, messages.length, hasSentAutoSummary]);
 
     useEffect(() => {
         if (externalPrompt && externalPrompt.text && caseId) {
