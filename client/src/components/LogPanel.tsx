@@ -69,6 +69,36 @@ const LogPanel: React.FC<LogPanelProps> = ({
         });
     };
 
+    const formatAccessMask = (maskStr: string): string => {
+        const hexVal = parseInt(maskStr, 16);
+        if (isNaN(hexVal)) return maskStr; 
+
+        const accessTypes: string[] = [];
+        
+        if (hexVal & 0x1) accessTypes.push('Read');
+        if (hexVal & 0x2) accessTypes.push('Write');
+        if (hexVal & 0x4) accessTypes.push('Append');
+        if (hexVal & 0x20) accessTypes.push('Execute');
+        if (hexVal & 0x40) accessTypes.push('Delete Child');
+        if (hexVal & 0x10000) accessTypes.push('Delete');
+        if (hexVal & 0x40000) accessTypes.push('Write DAC');
+        if (hexVal & 0x80000) accessTypes.push('Write Owner');
+        if (hexVal & 0x100000) accessTypes.push('Synchronize');
+
+        return accessTypes.length > 0 ? `${maskStr} (${accessTypes.join(', ')})` : maskStr;
+    };
+
+    const formatDataValue = (key: string, value: any): string => {
+        const strVal = String(value);
+        if (!strVal || strVal === '-') return '-';
+
+        if (key === 'AccessMask' || key === 'Accesses') {
+            return formatAccessMask(strVal);
+        }
+        
+        return strVal;
+    };
+
     const handleRowContextMenu = (e: React.MouseEvent, fieldName: string, value: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -196,7 +226,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
                                             {key.replace(/_/g, ' ')}
                                         </span>
                                         <span className="data-value inline-value">
-                                            {String(value) || '-'}
+                                            {formatDataValue(key, value)}
                                         </span>
                                     </div>
                                 )
