@@ -88,6 +88,58 @@ const LogPanel: React.FC<LogPanelProps> = ({
         return accessTypes.length > 0 ? `${maskStr} (${accessTypes.join(', ')})` : maskStr;
     };
 
+    const formatOperationType = (opTypeStr: string): string => {
+        if (opTypeStr.includes('1904')) return `${opTypeStr} (New registry value created)`;
+        if (opTypeStr.includes('1905')) return `${opTypeStr} (Existing registry value modified)`;
+        if (opTypeStr.includes('1906')) return `${opTypeStr} (Registry value deleted)`;
+        
+        return opTypeStr;
+    };
+
+    const formatLogonType = (type: string): string => {
+    const types: Record<string, string> = {
+        '2': 'Interactive (Local)',
+        '3': 'Network (Remote)',
+        '4': 'Batch',
+        '5': 'Service',
+        '7': 'Unlock',
+        '8': 'NetworkCleartext',
+        '9': 'NewCredentials',
+        '10': 'RemoteInteractive (RDP)',
+        '11': 'CachedInteractive'
+    };
+    return types[type] ? `${type} (${types[type]})` : type;
+};
+
+const formatStartType = (startTypeStr: string): string => {
+    const types: Record<string, string> = {
+        '0': 'Boot Start',
+        '1': 'System Start',
+        '2': 'Auto Start',
+        '3': 'Demand Start',
+        '4': 'Disabled'
+    };
+    return types[startTypeStr] ? `${startTypeStr} (${types[startTypeStr]})` : startTypeStr;
+};
+
+const formatServiceType = (serviceTypeStr: string): string => {
+        const val = parseInt(serviceTypeStr.startsWith('0x') ? serviceTypeStr.slice(2) : serviceTypeStr, 16);
+        if (isNaN(val)) return serviceTypeStr;
+
+        const types: string[] = [];
+        if (val & 0x1) types.push('Kernel Driver');
+        if (val & 0x2) types.push('File System Driver');
+        if (val & 0x4) types.push('Adapter');
+        if (val & 0x8) types.push('Recognizer Driver');
+        
+        if (val & 0x10) types.push('Win32 Own Process');
+        if (val & 0x20) types.push('Win32 Share Process');
+        
+        if (val & 0x100) types.push('Interactive Process');
+
+        return types.length > 0 ? `${serviceTypeStr} (${types.join(' + ')})` : serviceTypeStr;
+    };
+
     const formatDataValue = (key: string, value: any): string => {
         const strVal = String(value);
         if (!strVal || strVal === '-') return '-';
@@ -95,9 +147,21 @@ const LogPanel: React.FC<LogPanelProps> = ({
         if (key === 'AccessMask' || key === 'Accesses') {
             return formatAccessMask(strVal);
         }
-        
+        if (key === 'OperationType') {
+            return formatOperationType(strVal);
+        }
+        if (key === 'ServiceStartType') {
+            return formatStartType(strVal);
+        }
+        if (key === 'ServiceType') {
+            return formatServiceType(strVal);
+        }
+        if (key === 'LogonType') {
+            return formatLogonType(strVal);
+        }
         return strVal;
     };
+
 
     const handleRowContextMenu = (e: React.MouseEvent, fieldName: string, value: string) => {
         e.preventDefault();
