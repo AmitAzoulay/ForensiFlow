@@ -143,9 +143,9 @@ def generate_log_translation(log_details):
         
         response_data = response.json()
         
-        # הדפסה ללוגים כדי שתוכלו לראות כמה טוקנים חסכנו
+        # Avoid logging response-derived usage fields to prevent sensitive-data exposure via taint flow
         usage = response_data.get("usageMetadata", {})
-        logger.info(f"Translation Token Usage - Input: {usage.get('promptTokenCount')}, Output: {usage.get('candidatesTokenCount')}")
+        logger.info("Translation request completed successfully.")
         
         translation = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error").strip()
         return translation
