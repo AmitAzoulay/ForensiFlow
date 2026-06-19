@@ -173,15 +173,32 @@ const formatServiceType = (serviceTypeStr: string): string => {
         if (!selectedLink) return;
         setIsTranslating(true);
         try {
+            const logDetails = JSON.stringify(selectedLink.details, null, 2);
+
+            const response = await fetch('http://localhost:8000/api/translate-log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ case_id: caseId, log_details: logDetails })
+            });
+
+            if (response.status === 429) {
+                setAiTranslation("Rate limit exceeded. Please wait a minute before requesting another explanation.");
+                setIsTranslating(false);
+                return;
+            }
+
+            const data = await response.json();
+            if (data.reply) {
+                setAiTranslation(data.reply);
             // קריאה ישירה לנתיב התרגום הנקודתי והמהיר
             const response = await apiService.translateLog(selectedLink.details || {});
             if (response.reply) {
                 setAiTranslation(response.reply);
             } else {
-                setAiTranslation("Failed to generate translation.");
+                setAiTranslation(`Error: ${data.error || 'Failed to translate'}`);
             }
         } catch (error) {
-            setAiTranslation("Error connecting to AI service.");
+            setAiTranslation("Error connecting to ForensiFlow AI server.");
         } finally {
             setIsTranslating(false);
         }
@@ -192,9 +209,9 @@ const formatServiceType = (serviceTypeStr: string): string => {
             <div className="log-panel-header">
                 <h2>Log Panel</h2>
                 {selectedLink && (
-                    <button 
-                        className="header-ai-btn" 
-                        onClick={handleTranslateLog} 
+                    <button
+                        className="header-ai-btn"
+                        onClick={handleTranslateLog}
                         disabled={isTranslating || !caseId}
                         data-tooltip="Explain with AI"
                     >

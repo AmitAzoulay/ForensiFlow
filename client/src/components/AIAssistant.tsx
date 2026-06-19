@@ -54,13 +54,18 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
 
         try {
             const data = await apiService.sendChatMessage(caseId, updatedMessages);
+
             if (data.reply) {
                 setMessages(prev => [...prev, { role: 'ai', content: data.reply }]);
             } else {
                 setMessages(prev => [...prev, { role: 'ai', content: `Error: ${data.error}` }]);
             }
-        } catch (error) {
-            setMessages(prev => [...prev, { role: 'ai', content: 'Error connecting to ForensiFlow AI server.' }]);
+        } catch (error: any) {
+            if (error?.response?.status === 429 || error?.message?.includes('429')) {
+                setMessages(prev => [...prev, { role: 'ai', content: 'AI is overloaded right now. Please wait 60 seconds and try again.' }]);
+            } else {
+                setMessages(prev => [...prev, { role: 'ai', content: 'Error connecting to ForensiFlow AI server.' }]);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -116,7 +121,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
 
                     let displayContent = msg.content;
                     if (msg.role === 'user' && msg.content.includes("TACTICAL ANALYSIS REQUIRED:")) {
-                        displayContent = "🔍 Analyzing selected item..."; 
+                        displayContent = "🔍 Analyzing selected item...";
                     }
 
                     return (

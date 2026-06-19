@@ -26,20 +26,20 @@ def _insert_graph_relationship(tx, case_id, source_label, source_data, target_la
         logger.warning(f"Invalid node labels provided: {source_label}, {target_label}")
         return
 
+    # Changed relationship creation from MERGE to CREATE to log all repeated events
     query = f"""
     MERGE (c:Case {{case_id: $case_id}})
     MERGE (source:{source_label} {{entity_id: $s_id, case_id: $case_id}})
     ON CREATE SET source.name = $s_name
     MERGE (target:{target_label} {{entity_id: $t_id, case_id: $case_id}})
     ON CREATE SET target.name = $t_name
-    MERGE (source)-[r:{rel_type}]->(target)
+    CREATE (source)-[r:{rel_type}]->(target)
     SET r += $details
     """
     try:
         tx.run(query, case_id=case_id, s_id=s_id, s_name=s_name, t_id=t_id, t_name=t_name, details=details)
     except Exception as e:
         logger.error(f"Failed to insert relationship '{rel_type}': {e}")
-
 
 def _resolve_user(data_map, name_key, sid_key, sid_map):
     """Resolves a generic username using the SID map if the name is missing."""
