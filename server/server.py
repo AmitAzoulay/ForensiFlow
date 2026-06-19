@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from database import Neo4jClient
 from services.ai_agent import generate_forensic_response, generate_report_narrative, translate_single_log
+from services.evtx_parser import parse_and_store_evtx
 import pandas as pd
 import io
 from flask import send_file

@@ -121,11 +121,12 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
     const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
 
-    const linkColor = link.is_red ? '#ef4444' : GRAPH_SETTINGS.LINK_COLOR;
+    let linkColor = link.is_red ? '#ef4444' : GRAPH_SETTINGS.LINK_COLOR;
+    if (link.isBundle) linkColor = '#0f172a';
 
     ctx.beginPath();
     ctx.strokeStyle = linkColor;
-    ctx.lineWidth = Math.max((link.is_red ? 3 : GRAPH_SETTINGS.LINK_WIDTH) / globalScale, 0.8);
+    ctx.lineWidth = Math.max((link.is_red || link.isBundle ? 3 : GRAPH_SETTINGS.LINK_WIDTH) / globalScale, 0.8);
     ctx.moveTo(sourceTipX, sourceTipY);
     ctx.quadraticCurveTo(
         controlPoint.x,
@@ -163,17 +164,17 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
         const baseFontSize = GRAPH_SETTINGS.LABEL_FONT_SIZE > 5 ? GRAPH_SETTINGS.LABEL_FONT_SIZE : 10;
         const fontSize = Math.max(baseFontSize / globalScale, 2);
 
-        ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+        ctx.font = link.isBundle ? `700 ${fontSize}px Inter, sans-serif` : `600 ${fontSize}px Inter, sans-serif`;
         const textWidth = ctx.measureText(label).width;
         const bgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.6);
 
         ctx.translate(textPos.x, textPos.y);
         ctx.rotate(textAngle);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.fillStyle = link.isBundle ? 'rgba(241, 245, 249, 0.95)' : 'rgba(255, 255, 255, 0.95)';
         ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2 - (fontSize * 0.4), bgDimensions[0], bgDimensions[1]);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = link.is_red ? '#ef4444' : '#475569';
+        ctx.fillStyle = link.isBundle ? '#0f172a' : (link.is_red ? '#ef4444' : '#475569');
         ctx.fillText(label, 0, -(fontSize * 0.4));
     }
 
@@ -233,6 +234,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     const [nodeIcons, setNodeIcons] = useState<Record<string, HTMLImageElement>>({});
 
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetLabel: string; targetType: 'node' | 'link' | 'group'; targetData: any } | null>(null);
+    const [bundlePopup, setBundlePopup] = useState<{ x: number; y: number; links: any[] } | null>(null);
     const [selectedGroup, setSelectedGroup] = useState<{ nodes: any[], links: any[] }>({ nodes: [], links: [] });
     const [isLasso, setIsLasso] = useState(false);
     const [lassoBox, setLassoBox] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
@@ -288,27 +290,56 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
 
     const graphDataWithCurvature = useMemo(() => {
         if (!graphData || !graphData.links) return graphData;
-        const linksWithCurvature = [...graphData.links];
-        const connectionCounter: Record<string, number> = {};
-        linksWithCurvature.forEach(link => {
+
+        const connectionGroups: Record<string, any[]> = {};
+
+        graphData.links.forEach(link => {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
-            if (!connectionCounter[pairId]) connectionCounter[pairId] = 0;
-            link.pairIndex = connectionCounter[pairId];
-            connectionCounter[pairId]++;
-            link.isReversed = sourceId > targetId;
+            if (!connectionGroups[pairId]) connectionGroups[pairId] = [];
+            connectionGroups[pairId].push({ ...link, _sourceId: sourceId, _targetId: targetId });
         });
-        linksWithCurvature.forEach(link => {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-            const pairId = sourceId < targetId ? `${sourceId}-${targetId}` : `${targetId}-${sourceId}`;
-            const totalConnections = connectionCounter[pairId];
-            const baseCurvatureStep = 0.15;
-            const centralOffset = link.pairIndex - (totalConnections - 1) / 2;
-            link.curvature = centralOffset * baseCurvatureStep * (link.isReversed ? -1 : 1);
+
+        const processedLinks: any[] = [];
+
+        Object.values(connectionGroups).forEach(group => {
+            if (group.length > 3) {
+                const dirGroups: Record<string, any[]> = {};
+                group.forEach(link => {
+                    const dirId = `${link._sourceId}->${link._targetId}`;
+                    if (!dirGroups[dirId]) dirGroups[dirId] = [];
+                    dirGroups[dirId].push(link);
+                });
+
+                const directions = Object.values(dirGroups);
+                directions.forEach((dirGroup, index) => {
+                    const representative = dirGroup[0];
+                    const isReversed = representative._sourceId > representative._targetId;
+                    const baseCurvatureStep = 0.15;
+                    const centralOffset = index - (directions.length - 1) / 2;
+
+                    processedLinks.push({
+                        ...representative,
+                        id: `bundle-${representative._sourceId}-${representative._targetId}`,
+                        type: `${dirGroup.length} Events`,
+                        isBundle: true,
+                        bundledLinks: dirGroup,
+                        curvature: directions.length > 1 ? (centralOffset * baseCurvatureStep * (isReversed ? -1 : 1)) : 0
+                    });
+                });
+            } else {
+                group.forEach((link, index) => {
+                    const isReversed = link._sourceId > link._targetId;
+                    const baseCurvatureStep = 0.15;
+                    const centralOffset = index - (group.length - 1) / 2;
+                    link.curvature = centralOffset * baseCurvatureStep * (isReversed ? -1 : 1);
+                    processedLinks.push(link);
+                });
+            }
         });
-        return { nodes: graphData.nodes, links: linksWithCurvature };
+
+        return { nodes: graphData.nodes, links: processedLinks };
     }, [graphData]);
 
     useEffect(() => {
@@ -411,6 +442,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
         setLassoBox({ x1: x, y1: y, x2: x, y2: y });
         setSelectedGroup({ nodes: [], links: [] });
         setContextMenu(null);
+        setBundlePopup(null);
         const canvas = containerRef.current?.querySelector('canvas');
         if (canvas) canvas.style.cursor = 'crosshair';
     };
@@ -458,21 +490,39 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
 
     return (
         <div className="graph-panel-container">
-            <div className="top-toolbar">
-                <div className="toolbar-left">
-                    <h2 className="toolbar-title">ForensiFlow</h2>
-                    <div className="mode-toggle">
-                        <label className={mode === 'new' ? 'active' : ''}>
-                            <input type="radio" checked={mode === 'new'} onChange={() => setMode('new')} disabled={isPlaybackMode} />
+            <div className="top-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '12px 24px', backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+
+                {/* 1. Left Section: Branding & Mode Switcher */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '24px', minWidth: '300px' }}>
+                    <h2 className="toolbar-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>ForensiFlow</h2>
+                    <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '4px', border: '1px solid #e2e8f0' }}>
+                        <button
+                            onClick={() => setMode('new')}
+                            disabled={isPlaybackMode}
+                            style={{
+                                padding: '6px 12px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: mode === 'new' ? 600 : 500,
+                                backgroundColor: mode === 'new' ? '#ffffff' : 'transparent', color: mode === 'new' ? '#0f172a' : '#64748b',
+                                boxShadow: mode === 'new' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: isPlaybackMode ? 'default' : 'pointer', transition: 'all 0.2s', opacity: isPlaybackMode ? 0.6 : 1
+                            }}
+                        >
                             New Investigation
-                        </label>
-                        <label className={mode === 'existing' ? 'active' : ''}>
-                            <input type="radio" checked={mode === 'existing'} onChange={() => setMode('existing')} disabled={isPlaybackMode} />
+                        </button>
+                        <button
+                            onClick={() => setMode('existing')}
+                            disabled={isPlaybackMode}
+                            style={{
+                                padding: '6px 12px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: mode === 'existing' ? 600 : 500,
+                                backgroundColor: mode === 'existing' ? '#ffffff' : 'transparent', color: mode === 'existing' ? '#0f172a' : '#64748b',
+                                boxShadow: mode === 'existing' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: isPlaybackMode ? 'default' : 'pointer', transition: 'all 0.2s', opacity: isPlaybackMode ? 0.6 : 1
+                            }}
+                        >
                             Open Existing
-                        </label>
+                        </button>
                     </div>
                 </div>
-                <div className="toolbar-controls">
+
+                {/* 2. Center Section: Dynamic Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flex: 1 }}>
                     {mode === 'new' ? (
                         <>
                             <input
@@ -525,49 +575,58 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
-                            
-                            {caseId && !isPlaybackMode && hasRedItems && (
-                                <button className="btn-primary" onClick={onStartPlayback} style={{ marginLeft: '10px', background: 'linear-gradient(to right, #ef4444, #b91c1c)', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                    Play Attack Path
-                                </button>
-                            )}
-                            
-                            {/* כפתור ההורדה החדש שלך */}
-                            {onDownloadReport && hasRedItems && !isPlaybackMode && (
-                                <button 
-                                    onClick={onDownloadReport}
-                                    title="Download Forensics Report"
-                                    style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'center',
-                                        backgroundColor: 'white', 
-                                        color: '#334155', 
-                                        padding: '8px 12px', 
-                                        borderRadius: '6px', 
-                                        border: '1px solid #cbd5e1', 
-                                        cursor: 'pointer',
-                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                                        marginLeft: '8px',
-                                        marginRight: '8px',
-                                        height: '36px'
-                                    }}
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                        <polyline points="7 10 12 15 17 10"></polyline>
-                                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                                    </svg>
-                                </button>
-                            )}
-
-                            {caseId && (
-                                <button className="btn-secondary" onClick={triggerSave} disabled={isPlaybackMode} style={{ marginLeft: '10px' }}>
-                                    Save Edited
-                                </button>
-                            )}
                         </>
+                    )}
+                </div>
+
+                {/* 3. Right Section: Global Actions (Stable Position) */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', minWidth: '300px' }}>
+                    {caseId && !isPlaybackMode && hasRedItems && onDownloadReport && (
+                        <button
+                            onClick={onDownloadReport}
+                            title="Download Forensics Report"
+                            style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: 'white', color: '#334155', padding: '8px 12px',
+                                borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: '36px'
+                            }}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                        </button>
+                    )}
+
+                    {caseId && (
+                        <button
+                            onClick={triggerSave}
+                            disabled={isPlaybackMode}
+                            style={{
+                                backgroundColor: 'white', color: '#0f172a', border: '1px solid #cbd5e1',
+                                padding: '8px 16px', borderRadius: '6px', fontWeight: 600, cursor: isPlaybackMode ? 'default' : 'pointer',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: '36px', opacity: isPlaybackMode ? 0.6 : 1
+                            }}
+                        >
+                            Save Edited
+                        </button>
+                    )}
+
+                    {caseId && !isPlaybackMode && hasRedItems && onStartPlayback && (
+                        <button
+                            onClick={onStartPlayback}
+                            style={{
+                                background: 'linear-gradient(to right, #ef4444, #b91c1c)', color: 'white', border: 'none',
+                                display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold',
+                                padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', height: '36px',
+                                boxShadow: '0 4px 6px rgba(239, 68, 68, 0.25)'
+                            }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            Play Attack Path
+                        </button>
                     )}
                 </div>
             </div>
@@ -604,15 +663,53 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     ctx.arc(node.x, node.y, iconSize / 2, 0, 2 * Math.PI, false);
                                     ctx.fill();
                                 }}
-                                onLinkClick={(link) => {
+                                linkPointerAreaPaint={(link: any, color: string, ctx: any) => {
+                                    const startNode = link.source;
+                                    const endNode = link.target;
+                                    if (!startNode || !endNode || typeof startNode !== 'object' || typeof endNode !== 'object') return;
+
+                                    const deltaX = endNode.x - startNode.x;
+                                    const deltaY = endNode.y - startNode.y;
+                                    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                                    if (distance === 0) return;
+
+                                    const normalVector = { x: -deltaY / distance, y: deltaX / distance };
+                                    const controlPointOffset = (link.curvature || 0) * distance;
+                                    const controlPoint = {
+                                        x: startNode.x + deltaX / 2 + normalVector.x * controlPointOffset,
+                                        y: startNode.y + deltaY / 2 + normalVector.y * controlPointOffset
+                                    };
+
+                                    ctx.beginPath();
+                                    ctx.strokeStyle = color;
+                                    ctx.lineWidth = 15;
+                                    ctx.moveTo(startNode.x, startNode.y);
+                                    ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, endNode.x, endNode.y);
+                                    ctx.stroke();
+                                }}
+                                onLinkClick={(link, event) => {
                                     if (isPlaybackMode) return;
                                     setContextMenu(null);
                                     setSelectedGroup({ nodes: [], links: [] });
-                                    onLinkClick(link);
+
+                                    if (link.isBundle) {
+                                        if (containerRef.current) {
+                                            const rect = containerRef.current.getBoundingClientRect();
+                                            setBundlePopup({
+                                                x: event.clientX - rect.left,
+                                                y: event.clientY - rect.top,
+                                                links: link.bundledLinks
+                                            });
+                                        }
+                                    } else {
+                                        setBundlePopup(null);
+                                        onLinkClick(link);
+                                    }
                                 }}
                                 onBackgroundClick={() => {
                                     if (isPlaybackMode) return;
                                     setIsLasso(false);
+                                    setBundlePopup(null);
                                     const canvas = containerRef.current?.querySelector('canvas');
                                     if (canvas) canvas.style.cursor = 'default';
                                     setContextMenu(null);
@@ -620,6 +717,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 }}
                                 onBackgroundRightClick={(event) => {
                                     if (isPlaybackMode) return;
+                                    setBundlePopup(null);
                                     if (selectedGroup.nodes.length > 0 && containerRef.current) {
                                         const rect = containerRef.current.getBoundingClientRect();
                                         setContextMenu({
@@ -636,11 +734,13 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 onNodeClick={() => {
                                     if (isPlaybackMode) return;
                                     setContextMenu(null);
+                                    setBundlePopup(null);
                                     setSelectedGroup({ nodes: [], links: [] });
                                 }}
                                 onNodeRightClick={(node, event) => {
                                     event.preventDefault();
                                     if (isPlaybackMode) return;
+                                    setBundlePopup(null);
                                     if (containerRef.current) {
                                         const rect = containerRef.current.getBoundingClientRect();
                                         const isGroup = selectedGroup.nodes.some(n => n.id === node.id);
@@ -654,7 +754,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     }
                                 }}
                                 onLinkRightClick={(link, event) => {
-                                    if (isPlaybackMode) return;
+                                    if (isPlaybackMode || link.isBundle) return;
                                     if (containerRef.current) {
                                         const rect = containerRef.current.getBoundingClientRect();
                                         setContextMenu({
@@ -704,6 +804,58 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 onApplyEdit={(action) => onApplyEdit(action, contextMenu.targetType, contextMenu.targetData)}
                                 onIsolateLineage={onIsolateLineage}
                             />
+                        )}
+
+                        {bundlePopup && (
+                            <div style={{
+                                position: 'absolute',
+                                top: bundlePopup.y,
+                                left: bundlePopup.x,
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                zIndex: 1000,
+                                maxHeight: '300px',
+                                overflowY: 'auto',
+                                width: '280px',
+                                fontFamily: 'Inter, sans-serif'
+                            }}>
+                                <div style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0', fontWeight: 600, backgroundColor: '#f8fafc', fontSize: '13px', color: '#0f172a' }}>
+                                    Select Event ({bundlePopup.links.length})
+                                    <button
+                                        onClick={() => setBundlePopup(null)}
+                                        style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                                    >✕</button>
+                                </div>
+                                <div style={{ padding: '4px' }}>
+                                    {bundlePopup.links.map((l, i) => (
+                                        <div
+                                            key={i}
+                                            onClick={() => {
+                                                onLinkClick(l);
+                                                setBundlePopup(null);
+                                            }}
+                                            style={{
+                                                padding: '8px',
+                                                borderBottom: i < bundlePopup.links.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                                cursor: 'pointer',
+                                                fontSize: '12px',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '4px'
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                        >
+                                            <div style={{ fontWeight: 600, color: '#0f172a' }}>{l.type}</div>
+                                            <div style={{ color: '#64748b', fontSize: '11px' }}>
+                                                {l.details?.timestamp ? new Date(l.details.timestamp).toLocaleString() : (l.details?.event_id || 'N/A')}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         )}
 
                         <button

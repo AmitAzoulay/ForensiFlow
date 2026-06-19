@@ -33,7 +33,7 @@ def translate_single_log(log_details):
     except requests.exceptions.RequestException as e:
         logger.error(f"HTTP request failed during single log translation: {e}")
         raise
-    
+
 def generate_forensic_response(timeline_lines, chat_history):
     """
     Generates an AI response based on the forensic timeline and user chat history.
@@ -56,7 +56,7 @@ INSTRUCTIONS:
 2. If the user asks for a summary, provide a SINGLE, dense, concise paragraph. No bullet points.
 3. For all other chat messages, answer naturally like a helpful forensic analyst discussing the case.
 4. Focus on anomalies, lateral movement, and persistence.
-5. ALWAYS end your response with a "🔍 Suggested Next Steps:" section, offering 1-2 concrete investigative actions the user can take within a graph database based on the current context.
+
 """
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
