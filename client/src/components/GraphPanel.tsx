@@ -575,6 +575,47 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
+                            
+                            {caseId && !isPlaybackMode && hasRedItems && (
+                                <button className="btn-primary" onClick={onStartPlayback} style={{ marginLeft: '10px', background: 'linear-gradient(to right, #ef4444, #b91c1c)', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                    Play Attack Path
+                                </button>
+                            )}
+                            
+                            {onDownloadReport && hasRedItems && !isPlaybackMode && (
+                                <button 
+                                    onClick={onDownloadReport}
+                                    title="Download Forensics Report"
+                                    style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center',
+                                        backgroundColor: 'white', 
+                                        color: '#334155', 
+                                        padding: '8px 12px', 
+                                        borderRadius: '6px', 
+                                        border: '1px solid #cbd5e1', 
+                                        cursor: 'pointer',
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                        marginLeft: '8px',
+                                        marginRight: '8px',
+                                        height: '36px'
+                                    }}
+                                >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                </button>
+                            )}
+
+                            {caseId && (
+                                <button className="btn-secondary" onClick={triggerSave} disabled={isPlaybackMode} style={{ marginLeft: '10px' }}>
+                                    Save Edited
+                                </button>
+                            )}
                         </>
                     )}
                 </div>
@@ -872,38 +913,40 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     <span>Help</span>
                                     <button className="help-panel-close" onClick={() => setShowHelp(false)}>✕</button>
                                 </div>
-                                <div className="help-panel-section">Navigation</div>
-                                <ul className="help-list">
-                                    <li><kbd>Scroll</kbd> Zoom in / out</li>
-                                    <li><kbd>Drag canvas</kbd> Pan</li>
-                                    <li><kbd>Click node</kbd> Select &amp; view details</li>
-                                    <li><kbd>Right-click</kbd> Context menu</li>
-                                    <li><kbd>Ctrl + drag</kbd> Box-select multiple nodes</li>
-                                    <li><kbd>Drag node</kbd> Reposition node</li>
-                                </ul>
-                                <div className="help-panel-section">Search syntax</div>
-                                <ul className="help-list">
-                                    <li><kbd>term</kbd> Plain text search</li>
-                                    <li><kbd>A AND B</kbd> Both terms must match</li>
-                                    <li><kbd>A OR B</kbd> Either term matches</li>
-                                    <li><kbd>NOT A</kbd> Exclude term</li>
-                                    <li><kbd>(A OR B) AND C</kbd> Group with parentheses</li>
-                                    <li><kbd>type.field==val</kbd> Field filter by action name</li>
-                                    <li><kbd>4624.field==val</kbd> Field filter by event ID</li>
-                                    <li><kbd>*.field==val</kbd> Field filter, any event</li>
-                                    <li><kbd>type.src==name</kbd> Filter by source node name</li>
-                                    <li><kbd>type.target==name</kbd> Filter by destination node name</li>
-                                </ul>
-                                <div className="help-panel-section">Saved queries</div>
-                                <ul className="help-list">
-                                    <li><kbd>Save</kbd> Save current query as a tab</li>
-                                    <li><kbd>Click tab</kbd> Toggle tab on / off (OR with current query)</li>
-                                    <li><kbd>Right-click tab</kbd> Rename tab label</li>
-                                </ul>
-                                <div className="help-panel-section">Shortcuts</div>
-                                <ul className="help-list">
-                                    <li><kbd>/</kbd> Focus the search bar</li>
-                                </ul>
+                                <div className="help-panel-scrollable">
+                                    <div className="help-panel-section">Navigation</div>
+                                    <ul className="help-list">
+                                        <li><kbd>Scroll</kbd> Zoom in / out</li>
+                                        <li><kbd>Drag canvas</kbd> Pan</li>
+                                        <li><kbd>Click node</kbd> Select &amp; view details</li>
+                                        <li><kbd>Right-click</kbd> Context menu</li>
+                                        <li><kbd>Ctrl + drag</kbd> Box-select multiple nodes</li>
+                                        <li><kbd>Drag node</kbd> Reposition node</li>
+                                    </ul>
+                                    <div className="help-panel-section">Search syntax</div>
+                                    <ul className="help-list">
+                                        <li><kbd>term</kbd> Plain text search</li>
+                                        <li><kbd>A AND B</kbd> Both terms must match</li>
+                                        <li><kbd>A OR B</kbd> Either term matches</li>
+                                        <li><kbd>NOT A</kbd> Exclude term</li>
+                                        <li><kbd>(A OR B) AND C</kbd> Group with parentheses</li>
+                                        <li><kbd>type.field==val</kbd> Field filter by action name</li>
+                                        <li><kbd>4624.field==val</kbd> Field filter by event ID</li>
+                                        <li><kbd>*.field==val</kbd> Field filter, any event</li>
+                                        <li><kbd>type.src==name</kbd> Filter by source node name</li>
+                                        <li><kbd>type.target==name</kbd> Filter by destination node name</li>
+                                    </ul>
+                                    <div className="help-panel-section">Saved queries</div>
+                                    <ul className="help-list">
+                                        <li><kbd>Save</kbd> Save current query as a tab</li>
+                                        <li><kbd>Click tab</kbd> Toggle tab on / off (OR with current query)</li>
+                                        <li><kbd>Right-click tab</kbd> Rename tab label</li>
+                                    </ul>
+                                    <div className="help-panel-section">Shortcuts</div>
+                                    <ul className="help-list">
+                                        <li><kbd>/</kbd> Focus the search bar</li>
+                                    </ul>
+                                </div>
                             </div>
                         )}
                     </div>

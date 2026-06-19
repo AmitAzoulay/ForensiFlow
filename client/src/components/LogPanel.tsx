@@ -69,6 +69,100 @@ const LogPanel: React.FC<LogPanelProps> = ({
         });
     };
 
+    const formatAccessMask = (maskStr: string): string => {
+        const hexVal = parseInt(maskStr, 16);
+        if (isNaN(hexVal)) return maskStr; 
+
+        const accessTypes: string[] = [];
+        
+        if (hexVal & 0x1) accessTypes.push('Read');
+        if (hexVal & 0x2) accessTypes.push('Write');
+        if (hexVal & 0x4) accessTypes.push('Append');
+        if (hexVal & 0x20) accessTypes.push('Execute');
+        if (hexVal & 0x40) accessTypes.push('Delete Child');
+        if (hexVal & 0x10000) accessTypes.push('Delete');
+        if (hexVal & 0x40000) accessTypes.push('Write DAC');
+        if (hexVal & 0x80000) accessTypes.push('Write Owner');
+        if (hexVal & 0x100000) accessTypes.push('Synchronize');
+
+        return accessTypes.length > 0 ? `${maskStr} (${accessTypes.join(', ')})` : maskStr;
+    };
+
+    const formatOperationType = (opTypeStr: string): string => {
+        if (opTypeStr.includes('1904')) return `${opTypeStr} (New registry value created)`;
+        if (opTypeStr.includes('1905')) return `${opTypeStr} (Existing registry value modified)`;
+        if (opTypeStr.includes('1906')) return `${opTypeStr} (Registry value deleted)`;
+        
+        return opTypeStr;
+    };
+
+    const formatLogonType = (type: string): string => {
+    const types: Record<string, string> = {
+        '2': 'Interactive (Local)',
+        '3': 'Network (Remote)',
+        '4': 'Batch',
+        '5': 'Service',
+        '7': 'Unlock',
+        '8': 'NetworkCleartext',
+        '9': 'NewCredentials',
+        '10': 'RemoteInteractive (RDP)',
+        '11': 'CachedInteractive'
+    };
+    return types[type] ? `${type} (${types[type]})` : type;
+};
+
+const formatStartType = (startTypeStr: string): string => {
+    const types: Record<string, string> = {
+        '0': 'Boot Start',
+        '1': 'System Start',
+        '2': 'Auto Start',
+        '3': 'Demand Start',
+        '4': 'Disabled'
+    };
+    return types[startTypeStr] ? `${startTypeStr} (${types[startTypeStr]})` : startTypeStr;
+};
+
+const formatServiceType = (serviceTypeStr: string): string => {
+        const val = parseInt(serviceTypeStr.startsWith('0x') ? serviceTypeStr.slice(2) : serviceTypeStr, 16);
+        if (isNaN(val)) return serviceTypeStr;
+
+        const types: string[] = [];
+        if (val & 0x1) types.push('Kernel Driver');
+        if (val & 0x2) types.push('File System Driver');
+        if (val & 0x4) types.push('Adapter');
+        if (val & 0x8) types.push('Recognizer Driver');
+        
+        if (val & 0x10) types.push('Win32 Own Process');
+        if (val & 0x20) types.push('Win32 Share Process');
+        
+        if (val & 0x100) types.push('Interactive Process');
+
+        return types.length > 0 ? `${serviceTypeStr} (${types.join(' + ')})` : serviceTypeStr;
+    };
+
+    const formatDataValue = (key: string, value: any): string => {
+        const strVal = String(value);
+        if (!strVal || strVal === '-') return '-';
+
+        if (key === 'AccessMask' || key === 'Accesses') {
+            return formatAccessMask(strVal);
+        }
+        if (key === 'OperationType') {
+            return formatOperationType(strVal);
+        }
+        if (key === 'ServiceStartType') {
+            return formatStartType(strVal);
+        }
+        if (key === 'ServiceType') {
+            return formatServiceType(strVal);
+        }
+        if (key === 'LogonType') {
+            return formatLogonType(strVal);
+        }
+        return strVal;
+    };
+
+
     const handleRowContextMenu = (e: React.MouseEvent, fieldName: string, value: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -76,7 +170,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
     };
 
     const handleTranslateLog = async () => {
-        if (!selectedLink || !caseId) return;
+        if (!selectedLink) return;
         setIsTranslating(true);
         try {
             const logDetails = JSON.stringify(selectedLink.details, null, 2);
@@ -96,6 +190,10 @@ const LogPanel: React.FC<LogPanelProps> = ({
             const data = await response.json();
             if (data.reply) {
                 setAiTranslation(data.reply);
+            // קריאה ישירה לנתיב התרגום הנקודתי והמהיר
+            const response = await apiService.translateLog(selectedLink.details || {});
+            if (response.reply) {
+                setAiTranslation(response.reply);
             } else {
                 setAiTranslation(`Error: ${data.error || 'Failed to translate'}`);
             }
@@ -104,7 +202,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
         } finally {
             setIsTranslating(false);
         }
-    };
+    }
 
     return (
         <div className="log-panel-sidebar">
@@ -209,7 +307,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
                                             {key.replace(/_/g, ' ')}
                                         </span>
                                         <span className="data-value inline-value">
-                                            {String(value) || '-'}
+                                            {formatDataValue(key, value)}
                                         </span>
                                     </div>
                                 )
