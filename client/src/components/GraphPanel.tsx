@@ -575,27 +575,27 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
-                            
+
                             {caseId && !isPlaybackMode && hasRedItems && (
                                 <button className="btn-primary" onClick={onStartPlayback} style={{ marginLeft: '10px', background: 'linear-gradient(to right, #ef4444, #b91c1c)', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                     Play Attack Path
                                 </button>
                             )}
-                            
+
                             {onDownloadReport && hasRedItems && !isPlaybackMode && (
-                                <button 
+                                <button
                                     onClick={onDownloadReport}
                                     title="Download Forensics Report"
-                                    style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
                                         justifyContent: 'center',
-                                        backgroundColor: 'white', 
-                                        color: '#334155', 
-                                        padding: '8px 12px', 
-                                        borderRadius: '6px', 
-                                        border: '1px solid #cbd5e1', 
+                                        backgroundColor: 'white',
+                                        color: '#334155',
+                                        padding: '8px 12px',
+                                        borderRadius: '6px',
+                                        border: '1px solid #cbd5e1',
                                         cursor: 'pointer',
                                         boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                                         marginLeft: '8px',
@@ -736,10 +736,16 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     if (link.isBundle) {
                                         if (containerRef.current) {
                                             const rect = containerRef.current.getBoundingClientRect();
+                                            const resolvedLinks = link.bundledLinks.map((bl: any) => ({
+                                                ...bl,
+                                                source: link.source,
+                                                target: link.target
+                                            }));
+
                                             setBundlePopup({
                                                 x: event.clientX - rect.left,
                                                 y: event.clientY - rect.top,
-                                                links: link.bundledLinks
+                                                links: resolvedLinks
                                             });
                                         }
                                     } else {
