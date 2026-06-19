@@ -272,7 +272,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                     setSelectedCaseId(data[0].case_id);
                 }
             } catch (error) {
-                console.error("Failed to load investigation history:", error);
+                console.error(error);
             }
         };
         loadInvestigations();
@@ -396,7 +396,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                 onDataLoaded({ nodes: [], links: [] }, null);
             }
         } catch (e) {
-            console.error("Failed to delete", e);
+            console.error(e);
         }
     };
 
@@ -492,7 +492,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
         <div className="graph-panel-container">
             <div className="top-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '12px 24px', backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
 
-                {/* 1. Left Section: Branding & Mode Switcher */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '24px', minWidth: '300px' }}>
                     <h2 className="toolbar-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>ForensiFlow</h2>
                     <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '4px', border: '1px solid #e2e8f0' }}>
@@ -521,7 +520,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                     </div>
                 </div>
 
-                {/* 2. Center Section: Dynamic Controls */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flex: 1 }}>
                     {mode === 'new' ? (
                         <>
@@ -575,52 +573,10 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
-
-                            {caseId && !isPlaybackMode && hasRedItems && (
-                                <button className="btn-primary" onClick={onStartPlayback} style={{ marginLeft: '10px', background: 'linear-gradient(to right, #ef4444, #b91c1c)', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                    Play Attack Path
-                                </button>
-                            )}
-
-                            {onDownloadReport && hasRedItems && !isPlaybackMode && (
-                                <button
-                                    onClick={onDownloadReport}
-                                    title="Download Forensics Report"
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        backgroundColor: 'white',
-                                        color: '#334155',
-                                        padding: '8px 12px',
-                                        borderRadius: '6px',
-                                        border: '1px solid #cbd5e1',
-                                        cursor: 'pointer',
-                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                                        marginLeft: '8px',
-                                        marginRight: '8px',
-                                        height: '36px'
-                                    }}
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                        <polyline points="7 10 12 15 17 10"></polyline>
-                                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                                    </svg>
-                                </button>
-                            )}
-
-                            {caseId && (
-                                <button className="btn-secondary" onClick={triggerSave} disabled={isPlaybackMode} style={{ marginLeft: '10px' }}>
-                                    Save Edited
-                                </button>
-                            )}
                         </>
                     )}
                 </div>
 
-                {/* 3. Right Section: Global Actions (Stable Position) */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', minWidth: '300px' }}>
                     {caseId && !isPlaybackMode && hasRedItems && onDownloadReport && (
                         <button
