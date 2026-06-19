@@ -533,7 +533,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 </button>
                             )}
                             
-                            {/* כפתור ההורדה החדש שלך */}
                             {onDownloadReport && hasRedItems && !isPlaybackMode && (
                                 <button 
                                     onClick={onDownloadReport}
@@ -720,38 +719,40 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     <span>Help</span>
                                     <button className="help-panel-close" onClick={() => setShowHelp(false)}>✕</button>
                                 </div>
-                                <div className="help-panel-section">Navigation</div>
-                                <ul className="help-list">
-                                    <li><kbd>Scroll</kbd> Zoom in / out</li>
-                                    <li><kbd>Drag canvas</kbd> Pan</li>
-                                    <li><kbd>Click node</kbd> Select &amp; view details</li>
-                                    <li><kbd>Right-click</kbd> Context menu</li>
-                                    <li><kbd>Ctrl + drag</kbd> Box-select multiple nodes</li>
-                                    <li><kbd>Drag node</kbd> Reposition node</li>
-                                </ul>
-                                <div className="help-panel-section">Search syntax</div>
-                                <ul className="help-list">
-                                    <li><kbd>term</kbd> Plain text search</li>
-                                    <li><kbd>A AND B</kbd> Both terms must match</li>
-                                    <li><kbd>A OR B</kbd> Either term matches</li>
-                                    <li><kbd>NOT A</kbd> Exclude term</li>
-                                    <li><kbd>(A OR B) AND C</kbd> Group with parentheses</li>
-                                    <li><kbd>type.field==val</kbd> Field filter by action name</li>
-                                    <li><kbd>4624.field==val</kbd> Field filter by event ID</li>
-                                    <li><kbd>*.field==val</kbd> Field filter, any event</li>
-                                    <li><kbd>type.src==name</kbd> Filter by source node name</li>
-                                    <li><kbd>type.target==name</kbd> Filter by destination node name</li>
-                                </ul>
-                                <div className="help-panel-section">Saved queries</div>
-                                <ul className="help-list">
-                                    <li><kbd>Save</kbd> Save current query as a tab</li>
-                                    <li><kbd>Click tab</kbd> Toggle tab on / off (OR with current query)</li>
-                                    <li><kbd>Right-click tab</kbd> Rename tab label</li>
-                                </ul>
-                                <div className="help-panel-section">Shortcuts</div>
-                                <ul className="help-list">
-                                    <li><kbd>/</kbd> Focus the search bar</li>
-                                </ul>
+                                <div className="help-panel-scrollable">
+                                    <div className="help-panel-section">Navigation</div>
+                                    <ul className="help-list">
+                                        <li><kbd>Scroll</kbd> Zoom in / out</li>
+                                        <li><kbd>Drag canvas</kbd> Pan</li>
+                                        <li><kbd>Click node</kbd> Select &amp; view details</li>
+                                        <li><kbd>Right-click</kbd> Context menu</li>
+                                        <li><kbd>Ctrl + drag</kbd> Box-select multiple nodes</li>
+                                        <li><kbd>Drag node</kbd> Reposition node</li>
+                                    </ul>
+                                    <div className="help-panel-section">Search syntax</div>
+                                    <ul className="help-list">
+                                        <li><kbd>term</kbd> Plain text search</li>
+                                        <li><kbd>A AND B</kbd> Both terms must match</li>
+                                        <li><kbd>A OR B</kbd> Either term matches</li>
+                                        <li><kbd>NOT A</kbd> Exclude term</li>
+                                        <li><kbd>(A OR B) AND C</kbd> Group with parentheses</li>
+                                        <li><kbd>type.field==val</kbd> Field filter by action name</li>
+                                        <li><kbd>4624.field==val</kbd> Field filter by event ID</li>
+                                        <li><kbd>*.field==val</kbd> Field filter, any event</li>
+                                        <li><kbd>type.src==name</kbd> Filter by source node name</li>
+                                        <li><kbd>type.target==name</kbd> Filter by destination node name</li>
+                                    </ul>
+                                    <div className="help-panel-section">Saved queries</div>
+                                    <ul className="help-list">
+                                        <li><kbd>Save</kbd> Save current query as a tab</li>
+                                        <li><kbd>Click tab</kbd> Toggle tab on / off (OR with current query)</li>
+                                        <li><kbd>Right-click tab</kbd> Rename tab label</li>
+                                    </ul>
+                                    <div className="help-panel-section">Shortcuts</div>
+                                    <ul className="help-list">
+                                        <li><kbd>/</kbd> Focus the search bar</li>
+                                    </ul>
+                                </div>
                             </div>
                         )}
                     </div>

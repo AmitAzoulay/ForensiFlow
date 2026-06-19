@@ -53,6 +53,8 @@ INSTRUCTIONS:
         
         response_data = response.json()
         ai_reply = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error generating response.")
+        usage = response_data.get("usageMetadata", {})
+        logger.info(f"AI Token Usage - Input: {usage.get('promptTokenCount')}, Output: {usage.get('candidatesTokenCount')}, Total: {usage.get('totalTokenCount')}")
         
         return ai_reply.strip()
         
@@ -113,3 +115,41 @@ Your task is to write an "Executive Summary & Chronological Narrative" based on 
     except Exception as e:
         logger.error(f"Unexpected error during narrative generation: {e}")
         return "Error: An unexpected error occurred while generating the narrative."
+
+
+def generate_log_translation(log_details):
+    """
+    Generates a simple, single-sentence translation of a raw log without graph context.
+    """
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        logger.warning("GEMINI_API_KEY is not set. Returning mock translation.")
+        return "Error: API Key missing."
+
+    system_prompt = "You are an expert DFIR analyst. Explain this Windows event log telemetry in one simple sentence in English. No technical jargon. Do not suggest next steps. Just explain what happened."
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": f"Telemetry: {log_details}"}]}],
+        "generationConfig": {"temperature": 0.1}
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        
+        response_data = response.json()
+        
+        # Avoid logging response-derived usage fields to prevent sensitive-data exposure via taint flow
+        usage = response_data.get("usageMetadata", {})
+        logger.info("Translation request completed successfully.")
+        
+        translation = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error").strip()
+        return translation
+        
+    except Exception as e:
+        logger.error(f"Log translation failed: {e}")
+        return "Failed to translate log due to an error."
