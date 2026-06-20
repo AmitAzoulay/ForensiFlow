@@ -39,8 +39,62 @@ function getTokenAtEnd(query: string): { token: string; start: number } {
     return { token: query.slice(start), start };
 }
 
-function computeSuggestions(token: string, links: any[], hasContentBefore: boolean): Suggestion[] {
-    // Phase 2: identifier.field_prefix
+function computeSuggestions(token: string, links: any[], nodes: any[], hasContentBefore: boolean): Suggestion[] {
+    const valueMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+)\.([a-zA-Z0-9_]+)==(.*)$/i);
+    if (valueMatch) {
+        const [, id, field, valPrefix] = valueMatch;
+        const isNumeric = /^\d+$/.test(id);
+        const matchingLinks = links.filter(l =>
+            isNumeric
+                ? (l.details?.event_id?.toString() === id || l.details?.EventID?.toString() === id)
+                : (l.type || '').toLowerCase() === id.toLowerCase()
+        );
+
+        const possibleValues = new Set<string>();
+        const lowerField = field.toLowerCase();
+
+        const getNodeName = (idOrObj: any) => {
+            const nodeId = typeof idOrObj === 'object' ? idOrObj.id : idOrObj;
+            const node = nodes.find(n => n.id === nodeId);
+            return (node?.properties?.name || node?.name || nodeId || '').toString();
+        };
+
+        matchingLinks.forEach(l => {
+            if (lowerField === 'src' || lowerField === 'source') {
+                const name = getNodeName(l.source);
+                if (name) possibleValues.add(name);
+            } else if (lowerField === 'target' || lowerField === 'dst') {
+                const name = getNodeName(l.target);
+                if (name) possibleValues.add(name);
+            } else if (l.details && field in l.details) {
+                const val = l.details[field];
+                if (val !== null && val !== undefined && val !== '') {
+                    possibleValues.add(val.toString());
+                }
+            }
+        });
+
+        const valPrefixLower = valPrefix.toLowerCase();
+        const results: Suggestion[] = [];
+
+        Array.from(possibleValues)
+            .filter(v => v.toLowerCase().startsWith(valPrefixLower))
+            .slice(0, 8)
+            .forEach(v => {
+                let completionValue = v;
+                if (/[\s()]/.test(v) && !v.startsWith('"') && !v.startsWith("'")) {
+                    completionValue = `"${v}"`;
+                }
+                results.push({
+                    label: v,
+                    badge: 'value',
+                    completion: `${id}.${field}==${completionValue} `
+                });
+            });
+
+        return results;
+    }
+
     const fieldMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+)\.([a-zA-Z0-9_]*)$/);
     if (fieldMatch) {
         const [, id, fieldPrefix] = fieldMatch;
@@ -65,7 +119,6 @@ function computeSuggestions(token: string, links: any[], hasContentBefore: boole
         return [...nodeFields, ...detailFields];
     }
 
-    // Phase 1: identifier prefix
     const idMatch = token.match(/^([a-zA-Z0-9_]*)$/);
     if (!idMatch) return [];
 
@@ -150,8 +203,8 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     }, [searchQuery, tokenStart]);
 
     const suggestions = useMemo(
-        () => computeSuggestions(token, links, hasContentBefore),
-        [token, links, hasContentBefore]
+        () => computeSuggestions(token, links, nodes, hasContentBefore),
+        [token, links, nodes, hasContentBefore]
     );
 
     const applySuggestion = useCallback((suggestion: Suggestion) => {
@@ -269,7 +322,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                             title="Save current query as a tab"
                         >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"/>
+                                <path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z" />
                             </svg>
                             Save
                         </button>

@@ -4,67 +4,69 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(15, 23, 42, 0.85);
-    backdrop-filter: blur(4px);
-    z-index: 9999;
+    background-color: rgba(15, 23, 42, 0.4);
     display: flex;
-    align-items: center;
     justify-content: center;
-    font-family: 'Inter', sans-serif;
+    align-items: center;
+    z-index: 10000;
+    backdrop-filter: blur(3px);
 }
 
 .lineage-modal {
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: #ffffff;
     border-radius: 12px;
-    width: 90%;
-    max-width: 800px;
+    width: 800px;
+    max-width: 90vw;
     max-height: 85vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border: 1px solid #e2e8f0;
     overflow: hidden;
 }
 
 .lineage-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid #334155;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: #0f172a;
+    padding: 16px 24px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: #f8fafc;
 }
 
 .lineage-header h2 {
     margin: 0;
-    color: #f8fafc;
     font-size: 18px;
+    color: #0f172a;
     display: flex;
     align-items: center;
     gap: 10px;
+    font-weight: 600;
 }
 
 .lineage-close-btn {
-    background: none;
+    background: transparent;
     border: none;
-    color: #94a3b8;
+    color: #64748b;
     cursor: pointer;
-    padding: 4px;
     display: flex;
-    border-radius: 4px;
-    transition: all 0.2s;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
 }
 
 .lineage-close-btn:hover {
-    color: #f8fafc;
-    background-color: #334155;
+    background-color: #e2e8f0;
+    color: #0f172a;
 }
 
 .lineage-content {
     padding: 24px;
     overflow-y: auto;
     flex: 1;
-    background-color: #1e293b;
+    background-color: #ffffff;
 }
 
 .lineage-tree {
@@ -78,88 +80,71 @@
     align-items: center;
     padding: 8px 12px;
     border-radius: 6px;
-    color: #cbd5e1;
-    font-size: 14px;
     transition: background-color 0.2s;
     border: 1px solid transparent;
 }
 
 .lineage-node-row:hover {
-    background-color: #334155;
+    background-color: #f8fafc;
 }
 
 .lineage-node-row.is-target {
-    background-color: rgba(59, 130, 246, 0.15);
-    border-color: rgba(59, 130, 246, 0.3);
-    color: #f8fafc;
-    font-weight: 500;
+    background-color: #eff6ff;
+    border-color: #bfdbfe;
 }
 
 .lineage-node-row.is-red {
-    background-color: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.3);
-    color: #fca5a5;
+    background-color: #fef2f2;
+    border-color: #fecaca;
 }
 
 .lineage-indent {
     width: 24px;
     height: 100%;
-    position: relative;
-}
-
-.lineage-indent::before {
-    content: '';
-    position: absolute;
-    top: -16px;
-    left: 11px;
-    bottom: 12px;
-    width: 2px;
-    background-color: #475569;
-}
-
-.lineage-indent::after {
-    content: '';
-    position: absolute;
-    bottom: 12px;
-    left: 11px;
-    width: 12px;
-    height: 2px;
-    background-color: #475569;
+    border-left: 2px solid #e2e8f0;
+    margin-left: 11px;
 }
 
 .lineage-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 12px;
     width: 24px;
     height: 24px;
+    margin-right: 12px;
+    z-index: 1;
+    background-color: transparent;
 }
 
 .lineage-details {
     display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 16px;
+    align-items: baseline;
+    gap: 12px;
 }
 
 .lineage-name {
-    flex: 1;
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 14px;
 }
 
-.lineage-pid,
+.lineage-pid {
+    font-size: 12px;
+    color: #475569;
+    background-color: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+}
+
 .lineage-time {
-    font-family: monospace;
     font-size: 12px;
     color: #64748b;
-    background-color: #0f172a;
-    padding: 4px 8px;
-    border-radius: 4px;
 }
 
 .lineage-empty {
     text-align: center;
-    color: #94a3b8;
+    color: #64748b;
     padding: 40px;
-    font-size: 15px;
+    font-size: 14px;
 }
