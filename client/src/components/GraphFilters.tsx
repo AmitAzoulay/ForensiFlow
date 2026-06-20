@@ -39,7 +39,7 @@ function getTokenAtEnd(query: string): { token: string; start: number } {
     return { token: query.slice(start), start };
 }
 
-function computeSuggestions(token: string, links: any[], hasContentBefore: boolean): Suggestion[] {
+function computeSuggestions(token: string, links: any[], nodes: any[], hasContentBefore: boolean): Suggestion[] {
     const valueMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+|\*)\.([a-zA-Z0-9_]+)==(.*)$/i);
     if (valueMatch) {
         const [, id, field, valuePrefix] = valueMatch;
@@ -52,9 +52,23 @@ function computeSuggestions(token: string, links: any[], hasContentBefore: boole
                     : (l.type || '').toLowerCase() === id.toLowerCase()
         );
 
+        const getNodeById = (idOrObj: any): string => {
+            const id = typeof idOrObj === 'object' ? idOrObj?.id : idOrObj;
+            const found = nodes.find(n => n.id === id);
+            return found?.properties?.name || found?.name || id || '';
+        };
+
+        const lowerField = field.toLowerCase();
+        const isSrc = lowerField === 'src' || lowerField === 'source';
+        const isDst = lowerField === 'dst' || lowerField === 'target';
+
         const rawValues = [...new Set(
             matchingLinks
-                .map((l: any) => l.details?.[field]?.toString())
+                .map((l: any) => {
+                    if (isSrc) return getNodeById(l.source);
+                    if (isDst) return getNodeById(l.target);
+                    return l.details?.[field]?.toString();
+                })
                 .filter(Boolean)
         )] as string[];
 
@@ -178,7 +192,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
     }, [searchQuery, tokenStart]);
 
     const suggestions = useMemo(
-        () => computeSuggestions(token, links, hasContentBefore),
+        () => computeSuggestions(token, links, nodes, hasContentBefore),
         [token, links, nodes, hasContentBefore]
     );
 
