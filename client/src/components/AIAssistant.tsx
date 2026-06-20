@@ -29,6 +29,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
     const [forensicHistory, setForensicHistory] = useState<ChatMessage[]>([]);
     const [inputValue, setInputValue] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [pendingReparse, setPendingReparse] = useState<boolean>(false);
 
     const { position, isDragging, handleMouseDown } = useDrag();
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -43,6 +44,20 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
             handleSendMessage(externalPrompt.text);
         }
     }, [externalPrompt, caseId]);
+
+    const handleReparse = async () => {
+        if (!caseId || !onReparseComplete) return;
+        setPendingReparse(false);
+        setIsLoading(true);
+        try {
+            await apiService.reparseCase(caseId);
+            await onReparseComplete();
+        } catch {
+            setMessages(prev => [...prev, { role: 'ai', content: 'Reparse failed. Check the server logs.' }]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleSendMessage = async (textOverride?: string) => {
         const textToProcess = textOverride || inputValue;
@@ -71,19 +86,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                         : data.summary;
                     setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: historyContent }]);
                     setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
-
-                    if (caseId && onReparseComplete) {
-                        setIsLoading(true);
-                        try {
-                            await apiService.reparseCase(caseId);
-                            await new Promise(resolve => setTimeout(resolve, 800));
-                            await onReparseComplete();
-                        } catch {
-                            setMessages(prev => [...prev, { role: 'ai', content: 'Reparse failed. Check the server logs.' }]);
-                        } finally {
-                            setIsLoading(false);
-                        }
-                    }
+                    if (caseId && onReparseComplete) setPendingReparse(true);
                     return;
                 } else {
                     aiContent = data.error ?? 'Something went wrong generating the handler.';
@@ -93,18 +96,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                 aiContent = data.reply ?? `Error: ${data.error}`;
                 setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
                 setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
-
-                if (caseId && onReparseComplete) {
-                    setIsLoading(true);
-                    try {
-                        await apiService.reparseCase(caseId);
-                        await onReparseComplete();
-                    } catch {
-                        setMessages(prev => [...prev, { role: 'ai', content: 'Reparse failed. Check the server logs.' }]);
-                    } finally {
-                        setIsLoading(false);
-                    }
-                }
+                if (caseId && onReparseComplete) setPendingReparse(true);
                 return;
             } else if (isHandlerIntent) {
                 aiContent = data.reply ?? `Error: ${data.error}`;
@@ -185,6 +177,16 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                         </div>
                     );
                 })}
+
+                {pendingReparse && !isLoading && (
+                    <div className="ai-reparse-prompt">
+                        <span>Apply this change to the current investigation?</span>
+                        <div className="ai-reparse-actions">
+                            <button className="ai-reparse-yes" onClick={handleReparse}>Reparse</button>
+                            <button className="ai-reparse-skip" onClick={() => setPendingReparse(false)}>Skip</button>
+                        </div>
+                    </div>
+                )}
 
                 {isLoading && <div className="ai-loading">Thinking...</div>}
                 <div ref={messagesEndRef} />
