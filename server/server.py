@@ -49,7 +49,6 @@ def _summarize_handler(code: str, event_id: str) -> str:
         lines.append("Relationships that will be created:")
         for src_label, tgt_label, rel_type in matches:
             lines.append(f"  {src_label} —[{rel_type}]→ {tgt_label}")
-    lines.append("Reparse the investigation to apply it to the current case.")
     return "\n".join(lines)
 
 
