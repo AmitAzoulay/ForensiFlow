@@ -3,6 +3,7 @@ import GraphPanel from './components/GraphPanel';
 import LogPanel from './components/LogPanel';
 import AIAssistant from './components/AIAssistant';
 import GraphFilters from './components/GraphFilters';
+import { apiService } from './services/api';
 import ExecutionLineage from './components/ExecutionLineage';
 import './App.css';
 
@@ -270,6 +271,12 @@ function App() {
     });
   };
 
+  const handleReparseComplete = async () => {
+    if (!caseId) return;
+    const data = await apiService.getGraphData(caseId);
+    handleDataLoaded(data, caseId);
+  };
+
   const handleSaveEdited = async (newName: string) => {
     setLoadingText('Saving investigation...');
     setIsSaving(true);
@@ -468,7 +475,7 @@ function App() {
           matchResult = name.includes(targetValue);
         } else if (identifierMatches && (targetField in details)) {
           const actualValue = details[targetField]?.toString().toLowerCase() || "";
-          matchResult = actualValue.includes(targetValue) || actualValue === targetValue;
+          matchResult = actualValue.includes(targetValue);
         } else {
           matchResult = false;
         }
@@ -770,6 +777,7 @@ function App() {
       <AIAssistant
         caseId={caseId}
         externalPrompt={externalAIPrompt}
+        onReparseComplete={handleReparseComplete}
       />
     </>
   );

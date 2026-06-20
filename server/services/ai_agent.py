@@ -1,8 +1,172 @@
+import json
 import os
 import requests
 import logging
 
 logger = logging.getLogger(__name__)
+
+_INTENT_SYSTEM_PROMPT = """You are an intent classifier for ForensiFlow, a Windows EVTX forensics tool.
+
+Classify the user message into exactly one intent and respond with JSON only — no explanation, no markdown, no code fences.
+
+Intents:
+- "handler": user wants to add, create, or generate an event handler for any Windows security behaviour — even if they do not mention a specific Event ID
+- "list_handlers": user wants to see all currently registered AI-generated handlers
+- "remove_handler": user wants to delete or remove a specific AI-generated handler
+- "handler_explain": user wants to understand why a handler was built the way it was — e.g. why a certain event ID or relationship type was chosen
+- "forensic": user wants to analyze, investigate, summarize, or ask about the current case
+
+CRITICAL RULE: If the message contains any of the phrases "add a handler", "create a handler", "generate a handler", "make a handler", "build a handler", "write a handler", or "add handler" — it is ALWAYS "handler" intent, no matter what the subject is. The topic (e.g. "port bindings", "process injection", "lateral movement") is the behaviour to detect, not a forensic question.
+
+For "handler" intent:
+- Extract the Windows Event ID if the user stated one explicitly (4-5 digits); otherwise leave event_id as null and let the handler generator pick the right event.
+- Write a full description of what the handler should detect.
+- Choose a short snake_case name (2-4 words) derived from the relationships the handler will establish — NOT from the user's phrasing. For example, if the handler creates a ACCOUNT_ENABLED edge, name it "user_account_enabled". Do NOT include "event", "handler", "add", "create", the event ID number, or any filler words.
+
+For "remove_handler" intent, look at the conversation history to resolve what handler the user is referring to. If they say "the last one", "that handler", "the one I just created", "the previous handler", etc., find the actual handler name or event ID from the recent history and use that. Extract only the shortest unique identifying keyword — a behaviour name, event ID, or file stem fragment. Never use generic phrases like "previously created" or "the last one" as the name.
+
+Response format for handler with explicit event ID:
+{"intent": "handler", "event_id": "4688", "description": "detect suspicious process creation", "name": "suspicious_process_creation"}
+
+Response format for handler without explicit event ID:
+{"intent": "handler", "event_id": null, "description": "detect process injection techniques", "name": "process_injection"}
+
+Response format for list_handlers:
+{"intent": "list_handlers"}
+
+Response format for remove_handler:
+{"intent": "remove_handler", "name": "dcsync"}
+
+Response format for handler_explain:
+{"intent": "handler_explain", "name": "password"}
+
+Response format for forensic:
+{"intent": "forensic"}"""
+
+
+def classify_intent(message: str, handler_history: list | None = None) -> dict:
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is not set")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+
+    # Include recent handler management turns so the classifier can resolve
+    # references like "remove the last one" or "list them again".
+    contents = []
+    for msg in (handler_history or [])[-6:]:
+        role = "model" if msg.get("role") == "ai" else "user"
+        contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
+    contents.append({"role": "user", "parts": [{"text": message}]})
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": _INTENT_SYSTEM_PROMPT}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.0},
+    }
+
+    response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
+    response.raise_for_status()
+
+    raw = response.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning(f"Intent classifier returned non-JSON: {raw!r} — falling back to forensic")
+        return {"intent": "forensic"}
+
+_HANDLER_SYSTEM_PROMPT = """You are an expert Windows security engineer and Python developer.
+Generate a Python event handler for the ForensiFlow EVTX forensics tool.
+
+AVAILABLE IMPORTS (use exactly these, nothing else):
+  from services.handlers._shared import ENTITY_RESOLVERS, _insert_graph_relationship
+  from services.handlers import register_handler
+
+ENTITY_RESOLVERS — these are the ONLY eight resolvers available. Use no others.
+Call signature: resolver(data_map, name_key, id_key, lookup_map)
+
+  'user'     → str          name_key=username field, id_key=SID field, lookup_map=sid_map
+  'process'  → tuple(id,name)  name_key=image path field, id_key=PID field, lookup_map=proc_map
+  'computer' → str          name_key=None to use the event host, or a hostname field; lookup_map={}
+  'file'     → str          name_key=path field (e.g. 'ObjectName', 'ShareName'); lookup_map={}
+  'registry' → str          auto-combines ObjectName+ObjectValueName; lookup_map={}
+  'service'  → str          name_key=service name field; lookup_map={}
+  'task'     → str          name_key=task name field; lookup_map={}
+  'group'    → str          name_key=group name field; lookup_map={}
+
+If the entities involved in an event cannot be adequately represented by any of these eight
+resolvers, do not invent a new one. Instead, respond with a plain English explanation of
+why you cannot map the request — no code, no formatting, just a natural sentence or two.
+
+_insert_graph_relationship(tx, case_id, src_label, src_data, tgt_label, tgt_data, rel_type, log['details'])
+  src_label / tgt_label — one of: User, Computer, Process, Registry, Task, Service, File, Group
+  rel_type — UPPER_SNAKE_CASE describing the action (e.g. DCSYNC, KERBEROASTING, OBJECT_ACCESS)
+  src_data / tgt_data — value returned by an ENTITY_RESOLVERS call
+
+REQUIRED HEADER — every file must start with this comment block (fill in the fields):
+
+# EVENT: <event ID and its official Windows name>
+# REASONING: <why this event was chosen, what attacker behaviour it captures>
+# RELATIONSHIPS: <one line per relationship: SrcLabel -[REL_TYPE]-> TgtLabel — and why>
+
+TEMPLATE — follow this structure exactly (header first, then imports):
+
+from services.handlers._shared import ENTITY_RESOLVERS, _insert_graph_relationship
+from services.handlers import register_handler
+
+def _ctx(data_map, sid_map, proc_map):
+    return {
+        'src': ENTITY_RESOLVERS['user'](data_map, 'SubjectUserName', 'SubjectUserSid', sid_map),
+        'dst': ENTITY_RESOLVERS['computer'](data_map, None, None, {}),
+    }
+
+def _rule_name(tx, case_id, log, ctx):
+    # optional early-return condition:
+    # if 'some_guid' not in (log['data_map'].get('Properties') or '').lower(): return
+    _insert_graph_relationship(tx, case_id, "User", ctx['src'], "Computer", ctx['dst'], "REL_TYPE", log['details'])
+
+register_handler('XXXX', _ctx, [_rule_name])
+
+SECURITY CONSTRAINTS — the generated code is validated by a strict AST whitelist before it is saved.
+Violating any rule causes the handler to be rejected entirely.
+
+ALLOWED imports (exactly these two lines, no others, no aliases):
+  from services.handlers._shared import ENTITY_RESOLVERS, _insert_graph_relationship
+  from services.handlers import register_handler
+
+ALLOWED calls:
+  - _insert_graph_relationship(...)
+  - register_handler(...)
+  - ENTITY_RESOLVERS['key'](...) where key is one of: user, process, computer, file, registry, service, task, group
+  - Functions you define yourself in the file
+  - Safe builtins: str, int, float, bool, bytes, list, dict, tuple, set, frozenset,
+    len, range, enumerate, zip, map, filter, sorted, reversed, min, max, sum, abs,
+    round, isinstance, hasattr, callable, any, all, repr, chr, ord, hex, bin, oct, print
+  - Safe string/dict/list methods: lower, upper, strip, lstrip, rstrip, title,
+    startswith, endswith, replace, split, rsplit, splitlines, join, format, encode,
+    isdigit, isalpha, isalnum, isspace, count, find, rfind, index, get, keys, values,
+    items, update, pop, setdefault, copy, clear, append, extend, insert, remove,
+    sort, reverse, discard, add, and other standard data-structure methods
+
+FORBIDDEN (will cause rejection):
+  - Any import not listed above (import os, from subprocess import ..., etc.)
+  - exec, eval, open, __import__, compile, getattr, setattr, delattr
+  - globals, locals, vars, breakpoint, input
+  - Any dunder attribute access (.__class__, .__dict__, .__subclasses__, etc.)
+  - Calling any method not in the allowed list above
+  - Top-level statements other than imports, def, and the single register_handler call
+  - Aliases on imports (from services.handlers import register_handler as rh)
+
+RULES:
+- Output ONLY valid Python. No markdown, no code fences, no explanation.
+- Use real Windows event field names based on your knowledge of the event.
+- Multiple rule functions are allowed — pass them all in the list.
+- Each rule handles exactly one relationship type.
+- Conditions (e.g. GUID checks, value filters) belong inside the rule function as an early return.
+"""
+
 
 def translate_single_log(log_details):
     gemini_api_key = os.getenv("GEMINI_API_KEY")
@@ -12,24 +176,24 @@ def translate_single_log(log_details):
     system_prompt = "INSTRUCTION: Briefly explain this Windows event log in one simple sentence in English. No technical jargon. CRITICAL: Do not suggest next steps."
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
     headers = {"Content-Type": "application/json"}
-    
+
     payload = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": f"Telemetry: {log_details}"}]}],
         "generationConfig": {"temperature": 0.2}
     }
-    
+
     try:
         response = requests.post(url, json=payload, headers=headers)
-        
+
         if response.status_code == 429:
             raise Exception("RATE_LIMIT")
-            
-        response.raise_for_status() 
+
+        response.raise_for_status()
         response_data = response.json()
-        
+
         return response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error generating translation.").strip()
-        
+
     except requests.exceptions.RequestException as e:
         logger.error(f"HTTP request failed during single log translation: {e}")
         raise
@@ -94,6 +258,38 @@ INSTRUCTIONS:
     except Exception as e:
         logger.error(f"Unexpected error during AI generation: {e}")
         raise
+
+
+def generate_event_handler(event_id: str | None, description: str) -> str:
+    """
+    Generates Python handler code for a Windows event ID.
+    If event_id is None the model picks the most appropriate event ID itself.
+    Uses an isolated context — no timeline, no chat history.
+    """
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is not set")
+
+    if event_id:
+        prompt = f"Generate a handler for Windows Security Event ID {event_id}. {description}"
+    else:
+        prompt = (
+            f"Task: {description}\n"
+            "Choose the single most appropriate Windows Security Event ID for this detection, "
+            "then generate the handler for it."
+        )
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+    payload = {
+        "systemInstruction": {"parts": [{"text": _HANDLER_SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1},
+    }
+
+    response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
+    response.raise_for_status()
+    code = response.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    return code.strip()
 
 
 def generate_report_narrative(evidence_list):

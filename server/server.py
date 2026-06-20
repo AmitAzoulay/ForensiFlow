@@ -1,20 +1,201 @@
+import ast
+import importlib
 import logging
 import os
+import re
+import sys
 import uuid
+from pathlib import Path
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 from database import Neo4jClient
-from services.ai_agent import generate_forensic_response, generate_report_narrative, translate_single_log
+from services.ai_agent import (
+    classify_intent, generate_forensic_response, generate_report_narrative,
+    generate_event_handler, translate_single_log, generate_log_translation
+)
+from services.handlers import deregister_handler
 from services.evtx_parser import parse_and_store_evtx
 import pandas as pd
 import io
 from flask import send_file
-from services.ai_agent import generate_forensic_response, generate_report_narrative, generate_log_translation
 
 load_dotenv()
+
+_REL_RE = re.compile(
+    r'_insert_graph_relationship\([^,]+,\s*[^,]+,\s*"(\w+)",[^,]+,\s*"(\w+)",[^,]+,\s*"([A-Z_]+)"'
+)
+
+def _extract_reasoning(code: str) -> str:
+    """Extract the leading # comment block from generated handler code."""
+    lines = []
+    for line in code.split('\n'):
+        stripped = line.strip()
+        if stripped.startswith('#'):
+            lines.append(stripped[1:].strip())
+        elif stripped == '' and lines:
+            continue
+        else:
+            break
+    return '\n'.join(lines).strip()
+
+
+def _summarize_handler(code: str, event_id: str) -> str:
+    matches = _REL_RE.findall(code)
+    lines = [f"Handler for event {event_id} registered."]
+    if matches:
+        lines.append("Relationships that will be created:")
+        for src_label, tgt_label, rel_type in matches:
+            lines.append(f"  {src_label} —[{rel_type}]→ {tgt_label}")
+    return "\n".join(lines)
+
+
+_ALLOWED_FROM_IMPORTS = {
+    'services.handlers._shared': {'ENTITY_RESOLVERS', '_insert_graph_relationship'},
+    'services.handlers': {'register_handler'},
+}
+
+_SAFE_BUILTINS = frozenset([
+    # type constructors
+    'str', 'int', 'float', 'bool', 'bytes',
+    'list', 'dict', 'tuple', 'set', 'frozenset',
+    # iteration / sequence
+    'len', 'range', 'enumerate', 'zip', 'map', 'filter',
+    'sorted', 'reversed', 'min', 'max', 'sum', 'abs', 'round',
+    # introspection
+    'isinstance', 'hasattr', 'callable',
+    # logic
+    'any', 'all',
+    # text
+    'repr', 'chr', 'ord', 'hex', 'bin', 'oct',
+    # output (useful for debugging handlers)
+    'print',
+])
+
+_SAFE_ATTR_METHODS = frozenset([
+    # str
+    'lower', 'upper', 'strip', 'lstrip', 'rstrip', 'title', 'capitalize',
+    'startswith', 'endswith', 'replace', 'split', 'rsplit', 'splitlines',
+    'join', 'format', 'format_map', 'encode', 'decode',
+    'isdigit', 'isalpha', 'isalnum', 'isspace', 'isupper', 'islower',
+    'count', 'find', 'rfind', 'index', 'rindex', 'zfill', 'center',
+    'ljust', 'rjust', 'expandtabs', 'partition', 'rpartition',
+    # dict
+    'get', 'keys', 'values', 'items', 'update', 'pop', 'setdefault',
+    'copy', 'clear', 'popitem',
+    # list / set
+    'append', 'extend', 'insert', 'remove', 'sort', 'reverse',
+    'index', 'discard', 'add', 'union', 'intersection', 'difference',
+    # general
+    'strip',
+])
+
+_KNOWN_RESOLVERS = frozenset([
+    'user', 'process', 'computer', 'file', 'registry', 'service', 'task', 'group',
+])
+
+def _validate_handler_ast(code: str, event_id: str | None) -> str:
+    """
+    Whitelist-based AST validator. Raises ValueError if the code does anything
+    beyond registering a single handler using the approved API.
+
+    Allowed at module level:
+      - from services.handlers._shared import ENTITY_RESOLVERS, _insert_graph_relationship
+      - from services.handlers import register_handler
+      - function definitions (def)
+      - exactly one register_handler(...) call
+
+    Allowed calls anywhere in the tree:
+      - _insert_graph_relationship(...)
+      - register_handler(...)
+      - functions defined within the file itself
+      - ENTITY_RESOLVERS['key'](...)   (subscript call)
+      - .get() .lower() .strip() etc.  (safe string/dict methods)
+
+    Everything else — bare imports, exec, eval, open, dunder access, arbitrary
+    attribute methods — is rejected before the file is written to disk.
+    """
+    tree = ast.parse(code)  # raises SyntaxError if invalid
+
+    defined_funcs = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+    allowed_call_names = {'_insert_graph_relationship', 'register_handler'} | defined_funcs | _SAFE_BUILTINS
+
+    register_calls = []
+
+    # 1. Module-level structure
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ''
+            allowed_names = _ALLOWED_FROM_IMPORTS.get(module)
+            if allowed_names is None:
+                raise ValueError(f"Import from disallowed module: '{module}'")
+            for alias in node.names:
+                if alias.name not in allowed_names:
+                    raise ValueError(f"Disallowed name '{alias.name}' imported from '{module}'")
+                if alias.asname is not None:
+                    raise ValueError(f"Import aliases not allowed: '{alias.name} as {alias.asname}'")
+
+        elif isinstance(node, ast.Import):
+            raise ValueError("'import' statements are not allowed")
+
+        elif isinstance(node, ast.FunctionDef):
+            pass  # internals checked via ast.walk below
+
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            func = node.value.func
+            if isinstance(func, ast.Name) and func.id == 'register_handler':
+                register_calls.append(node.value)
+            else:
+                name = func.id if isinstance(func, ast.Name) else ast.dump(func)
+                raise ValueError(f"Unexpected top-level call: '{name}'")
+
+        else:
+            raise ValueError(f"Disallowed statement at module level: {type(node).__name__}")
+
+    # 2. Exactly one register_handler call
+    if len(register_calls) != 1:
+        raise ValueError(f"Expected exactly one register_handler() call, got {len(register_calls)}")
+
+    # 3. First arg must be a 4-5 digit string literal; if event_id was specified it must match
+    call = register_calls[0]
+    if not call.args or not isinstance(call.args[0], ast.Constant):
+        raise ValueError("register_handler first argument must be a string literal event ID")
+    detected_id = str(call.args[0].value)
+    if not detected_id.isdigit() or not (4 <= len(detected_id) <= 5):
+        raise ValueError(f"register_handler event ID must be 4-5 digits, got '{detected_id}'")
+    if event_id and detected_id != event_id:
+        raise ValueError(f"register_handler first argument must be '{event_id}', got '{detected_id}'")
+
+    # 4. Walk every node: whitelist calls, block dunder attribute access
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                if func.id not in allowed_call_names:
+                    raise ValueError(f"Call to disallowed name: '{func.id}'")
+            elif isinstance(func, ast.Subscript):
+                if not (isinstance(func.value, ast.Name) and func.value.id == 'ENTITY_RESOLVERS'):
+                    raise ValueError("Subscript calls only allowed on ENTITY_RESOLVERS")
+                key = func.slice
+                if not isinstance(key, ast.Constant) or key.value not in _KNOWN_RESOLVERS:
+                    bad = key.value if isinstance(key, ast.Constant) else ast.dump(key)
+                    raise ValueError(
+                        f"Unknown resolver '{bad}'. "
+                        f"Available: {', '.join(sorted(_KNOWN_RESOLVERS))}"
+                    )
+            elif isinstance(func, ast.Attribute):
+                if func.attr not in _SAFE_ATTR_METHODS:
+                    raise ValueError(f"Method call not allowed: '.{func.attr}()'")
+            else:
+                raise ValueError(f"Disallowed call expression: {ast.dump(func)}")
+
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith('__') and node.attr.endswith('__'):
+                raise ValueError(f"Dunder attribute access not allowed: '.{node.attr}'")
+
+    return detected_id
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -161,6 +342,155 @@ def process_ai_chat():
              return jsonify({"reply": "AI quota has been reached. Please wait a minute and try again."}), 429
         return jsonify({"error": "Failed to process AI request"}), 500
     
+@app.route('/api/chat', methods=['POST'])
+def unified_chat():
+    data = request.json
+    case_id = data.get('case_id')
+    history = data.get('history', [])                  # forensic context only
+    handler_history = data.get('handler_history', [])  # handler management context only
+
+    if not history and not handler_history:
+        return jsonify({"error": "No message provided"}), 400
+
+    # Use whichever history has the last message
+    last_message = (handler_history or history)[-1].get('content', '')
+
+    try:
+        intent_data = classify_intent(last_message, handler_history)
+    except Exception as e:
+        logger.error(f"Intent classification failed: {e}")
+        intent_data = {"intent": "forensic"}
+
+    intent = intent_data.get('intent', 'forensic')
+
+    if intent == 'handler':
+        event_id = (intent_data.get('event_id') or '').strip()
+        description = (intent_data.get('description') or '').strip()
+
+        # event_id may be None if the user didn't specify one — the AI will pick it
+        if event_id and not event_id.isdigit():
+            event_id = None
+
+        raw_name = intent_data.get('name', '')
+        safe_name = re.sub(r'[^a-z0-9_]', '', raw_name.lower().replace('-', '_').replace(' ', '_'))
+        safe_name = re.sub(r'_+', '_', safe_name).strip('_')
+
+        try:
+            code = generate_event_handler(event_id, description)
+            code = re.sub(r'^```(?:python)?\s*\n?', '', code, flags=re.MULTILINE)
+            code = re.sub(r'^```\s*$', '', code, flags=re.MULTILINE).strip()
+
+            try:
+                ast.parse(code)
+            except SyntaxError:
+                # If it doesn't look like Python code, the AI wrote a natural decline message
+                if 'register_handler' not in code and 'def ' not in code:
+                    return jsonify({"intent": "handler", "error": code}), 200
+                raise
+
+            event_id = _validate_handler_ast(code, event_id)  # returns the actual event ID
+
+            if not safe_name:
+                safe_name = f'handler_{event_id}'
+            file_stem = f'event_{event_id}_{safe_name}'
+
+            handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+            handler_dir.mkdir(exist_ok=True)
+            (handler_dir / f'{file_stem}.py').write_text(code)
+
+            module_name = f'services.handlers.ai_generated.{file_stem}'
+            if module_name in sys.modules:
+                importlib.reload(sys.modules[module_name])
+            else:
+                importlib.import_module(module_name)
+
+            summary = _summarize_handler(code, event_id)
+            reasoning = _extract_reasoning(code)
+            return jsonify({"intent": "handler", "event_id": event_id, "summary": summary, "reasoning": reasoning}), 200
+
+        except (SyntaxError, ValueError) as e:
+            logger.error(f"Handler validation failed: {e}")
+            return jsonify({"intent": "handler", "error": f"Handler validation failed: {e}"}), 200
+        except Exception as e:
+            logger.error(f"Handler generation failed: {e}")
+            return jsonify({"intent": "handler", "error": str(e)}), 200
+
+    elif intent == 'list_handlers':
+        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+        files = sorted(handler_dir.glob('event_*_*.py'))
+        if not files:
+            lines = ["No AI-generated handlers are currently registered."]
+        else:
+            lines = ["Registered AI-generated handlers:"]
+            for f in files:
+                parts = f.stem.split('_', 2)  # event, <id>, <name>
+                event_id_part = parts[1] if len(parts) > 1 else '?'
+                name_part = parts[2].replace('_', ' ') if len(parts) > 2 else f.stem
+                lines.append(f"  • Event {event_id_part}: {name_part}  [{f.stem}]")
+        return jsonify({"intent": "list_handlers", "reply": "\n".join(lines)}), 200
+
+    elif intent == 'remove_handler':
+        name_query = (intent_data.get('name') or '').lower().strip()
+        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+        files = sorted(handler_dir.glob('event_*_*.py'))
+
+        if not name_query:
+            return jsonify({"intent": "remove_handler", "reply": "Please specify which handler to remove."}), 200
+
+        matches = [f for f in files if name_query in f.stem.lower()]
+        if not matches:
+            return jsonify({"intent": "remove_handler", "reply": f"No handler found matching '{name_query}'."}), 200
+        if len(matches) > 1:
+            names = "\n".join(f"  • {f.stem}" for f in matches)
+            return jsonify({"intent": "remove_handler", "reply": f"Multiple matches found:\n{names}\nBe more specific."}), 200
+
+        target = matches[0]
+        module_name = f'services.handlers.ai_generated.{target.stem}'
+        deregister_handler(module_name)
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+        target.unlink()
+        logger.info(f"Removed handler: {target.stem}")
+        return jsonify({"intent": "remove_handler", "reply": f"Handler '{target.stem}' removed."}), 200
+
+    elif intent == 'handler_explain':
+        name_query = (intent_data.get('name') or '').lower().strip()
+        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+        files = sorted(handler_dir.glob('event_*_*.py'))
+
+        if not name_query:
+            return jsonify({"intent": "handler_explain", "reply": "Which handler would you like explained?"}), 200
+
+        matches = [f for f in files if name_query in f.stem.lower()]
+        if not matches:
+            return jsonify({"intent": "handler_explain", "reply": f"No handler found matching '{name_query}'."}), 200
+        if len(matches) > 1:
+            names = "\n".join(f"  • {f.stem}" for f in matches)
+            return jsonify({"intent": "handler_explain", "reply": f"Multiple matches:\n{names}\nBe more specific."}), 200
+
+        code = matches[0].read_text()
+        reasoning = _extract_reasoning(code)
+        if not reasoning:
+            return jsonify({"intent": "handler_explain", "reply": f"No reasoning comment found in '{matches[0].stem}'."}), 200
+        return jsonify({"intent": "handler_explain", "reply": reasoning}), 200
+
+    else:  # forensic
+        if not case_id:
+            return jsonify({"intent": "forensic", "reply": "Load a case first to analyze the investigation."}), 200
+
+        try:
+            timeline = db_client.get_investigation_timeline(case_id)
+            if not timeline:
+                return jsonify({"intent": "forensic", "reply": "No data in the current graph to analyze. Load an EVTX file first."})
+
+            reply = generate_forensic_response(timeline, history)
+            return jsonify({"intent": "forensic", "reply": reply}), 200
+
+        except Exception as e:
+            logger.error(f"Forensic chat failed: {e}")
+            return jsonify({"error": "Failed to process AI request"}), 500
+
+
 @app.route('/api/investigations/<case_id>', methods=['DELETE'])
 def delete_investigation(case_id):
     try:
@@ -187,6 +517,60 @@ def save_edited_investigation():
         logger.error(f"Save edited failed: {e}")
         return jsonify({"error": "Failed to save edited investigation"}), 500
     
+@app.route('/api/generate-handler', methods=['POST'])
+def generate_handler_route():
+    data = request.json
+    event_id = (data.get('event_id') or '').strip()
+    description = (data.get('description') or '').strip()
+
+    if not event_id or not event_id.isdigit():
+        return jsonify({'error': 'A numeric event_id is required'}), 400
+
+    try:
+        code = generate_event_handler(event_id, description)
+
+        code = re.sub(r'^```(?:python)?\s*\n?', '', code, flags=re.MULTILINE)
+        code = re.sub(r'^```\s*$', '', code, flags=re.MULTILINE).strip()
+        event_id = _validate_handler_ast(code, event_id)
+
+        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+        handler_dir.mkdir(exist_ok=True)
+        (handler_dir / f'event_{event_id}.py').write_text(code)
+
+        module_name = f'services.handlers.ai_generated.event_{event_id}'
+        if module_name in sys.modules:
+            importlib.reload(sys.modules[module_name])
+        else:
+            importlib.import_module(module_name)
+
+        return jsonify({'code': code, 'event_id': event_id}), 200
+
+    except (SyntaxError, ValueError) as e:
+        logger.error(f"Handler validation failed: {e}")
+        return jsonify({'error': f'Handler validation failed: {e}'}), 500
+    except Exception as e:
+        logger.error(f"Handler generation failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/reparse/<case_id>', methods=['POST'])
+def reparse_case(case_id):
+    try:
+        matches = list(Path(UPLOAD_FOLDER).glob(f"*_{case_id}.evtx"))
+        if not matches:
+            return jsonify({'error': 'Original EVTX file not found for this case'}), 404
+        filepath = str(matches[0])
+
+        case_name = db_client.get_investigation_name(case_id)
+        db_client.delete_investigation(case_id)
+        parse_and_store_evtx(filepath, case_id, case_name, db_client)
+
+        return jsonify({'status': 'success'}), 200
+    except Exception as e:
+        logger.error(f"Reparse failed for case {case_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/generate-forensic-report', methods=['POST'])
 def generate_forensic_report():
     try:

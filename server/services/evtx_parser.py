@@ -1,265 +1,242 @@
 import logging
+import re
 import xml.etree.ElementTree as ET
 import Evtx.Evtx as evtx
 
+from services.handlers import EVENT_HANDLERS
+
 logger = logging.getLogger(__name__)
 
-def _insert_graph_relationship(tx, case_id, source_label, source_data, target_label, target_data, rel_type, details):
-    if isinstance(source_data, tuple):
-        s_id, s_name = source_data
-    else:
-        s_id, s_name = source_data, source_data
+# ---------------------------------------------------------------------------
+# Field-value interpretation tables
+# ---------------------------------------------------------------------------
 
-    if isinstance(target_data, tuple):
-        t_id, t_name = target_data
-    else:
-        t_id, t_name = target_data, target_data
+_WINDOWS_CODE_MAP = {
+    # TokenElevationType (events 4688, 4624)
+    '%%1936': 'Type 1 - Default',
+    '%%1937': 'Type 2 - Elevated',
+    '%%1938': 'Type 3 - Limited',
+    # ImpersonationLevel (events 4624, 4648, 4674)
+    '%%1832': 'Anonymous',
+    '%%1833': 'Identification',
+    '%%1840': 'Impersonation',
+    '%%1841': 'Delegation',
+    # Boolean flags: VirtualAccount, ElevatedToken, RestrictedAdminMode
+    '%%1842': 'Yes',
+    '%%1843': 'No',
+    # User account attribute placeholders (events 4720, 4738, 4741)
+    '%%1793': '<not set>',
+    '%%1794': 'Never',
+    '%%1797': 'All',
+    # UserAccountControl flags (events 4720, 4738, 4741, 4742)
+    '%%2080': 'Normal Account',
+    '%%2082': 'Account Disabled',
+    '%%2084': 'Home Directory Required',
+    '%%2086': 'Locked Out',
+    '%%2088': 'Password Not Required',
+    '%%2090': 'User Cannot Change Password',
+    '%%2092': 'Encrypted Text Password Allowed',
+    '%%2094': 'Temp Duplicate Account',
+    '%%2096': 'Normal Account',
+    '%%2098': 'MNS Logon Account',
+    '%%2100': 'Interdomain Trust Account',
+    '%%2102': 'Workstation Trust Account',
+    '%%2104': 'Server Trust Account',
+    '%%2106': 'Password Never Expires',
+    '%%2108': 'MNS Logon Account',
+    '%%2110': 'Smartcard Required',
+    '%%2112': 'Trusted for Delegation',
+    '%%2114': 'Not Delegated',
+    '%%2116': 'Use DES Key Only',
+    '%%2118': 'Do Not Require Pre-Auth',
+    '%%2120': 'Password Expired',
+    '%%2122': 'Trusted to Authenticate for Delegation',
+    '%%2124': 'Partial Secrets Account (RODC)',
+    # Standard access rights (AccessList field — events 4663, 4656, 4670)
+    '%%1537': 'Delete',
+    '%%1538': 'Read Control',
+    '%%1539': 'Write DAC',
+    '%%1540': 'Write Owner',
+    '%%1541': 'Synchronize',
+    '%%1542': 'Access System Security',
+    # Object-specific access rights (AccessList field — events 4663, 4656)
+    '%%4416': 'Read Data / List Directory',
+    '%%4417': 'Write Data / Add File',
+    '%%4418': 'Append Data / Add Subdirectory',
+    '%%4419': 'Read Extended Attributes',
+    '%%4420': 'Write Extended Attributes',
+    '%%4421': 'Execute / Traverse',
+    '%%4423': 'Read Attributes',
+    '%%4424': 'Write Attributes',
+    # OperationType (event 4657 — registry)
+    '%%1904': 'New value created',
+    '%%1905': 'Value modified',
+    '%%1906': 'Value deleted',
+    # Direction (event 5156 — network connection)
+    '%%14592': 'Inbound',
+    '%%14593': 'Outbound',
+    # FailureReason (event 4625 — failed logon)
+    '%%2304': 'Logon error',
+    '%%2305': 'Account expired',
+    '%%2306': 'Netlogon not active',
+    '%%2307': 'Account locked out',
+    '%%2308': 'Logon type not granted',
+    '%%2309': 'Password expired',
+    '%%2310': 'Account disabled',
+    '%%2311': 'Logon hours restriction',
+    '%%2312': 'Workstation restriction',
+    '%%2313': 'Bad credentials',
+    # Event keywords
+    '%%8272': 'Audit Success',
+    '%%8273': 'Audit Failure',
+}
 
-    if not s_id or not t_id or s_id in ['-', ''] or t_id in ['-', '']:
-        return
+_KERBEROS_STATUS_MAP = {
+    '0x0':  'Success',
+    '0x1':  'Client not found in Kerberos database',
+    '0x2':  'Server not found in Kerberos database',
+    '0x6':  'Bad network address / client not found',
+    '0x7':  'Protocol version mismatch',
+    '0x8':  'Integrity check failed',
+    '0xc':  'KDC policy rejection',
+    '0xd':  'Bad Kerberos option',
+    '0x12': 'Credentials revoked / account disabled',
+    '0x17': 'Password expired',
+    '0x18': 'Pre-authentication failed (wrong password)',
+    '0x19': 'Pre-authentication required',
+    '0x1a': 'Server principal not valid yet',
+    '0x24': 'Certificate mismatch',
+    '0x25': 'Integrity check failed on AP response',
+    '0x29': 'Request is a replay',
+    '0x2c': 'Bad key version number',
+    '0x2d': 'Service key expired',
+    '0x32': 'Kerberos application error',
+}
 
-    valid_labels = ["User", "Computer", "Process", "Registry", "Task", "Service", "File", "Group"]
-    source_label = source_label.capitalize()
-    target_label = target_label.capitalize()
+_PRE_AUTH_TYPE_MAP = {
+    '0':  'No Pre-Authentication',
+    '2':  'Password (RC4/NTLM)',
+    '15': 'PKINIT (Certificate)',
+    '17': 'Hardware Token (Smartcard)',
+    '18': 'PKINIT (MS Extension)',
+}
 
-    if source_label not in valid_labels or target_label not in valid_labels:
-        logger.warning(f"Invalid node labels provided: {source_label}, {target_label}")
-        return
+_NTSTATUS_MAP = {
+    '0x0':        'Success',
+    '0x00000000': 'Success',
+    '0xc0000064': 'Unknown username',
+    '0xc000006a': 'Wrong password',
+    '0xc000006d': 'Bad credentials',
+    '0xc000006e': 'Account restriction',
+    '0xc000006f': 'Outside logon hours',
+    '0xc0000070': 'Workstation restriction',
+    '0xc0000071': 'Password expired',
+    '0xc0000072': 'Account disabled',
+    '0xc000015b': 'Logon type not granted',
+    '0xc0000133': 'Clock skew too large',
+    '0xc000017c': 'No domain controllers',
+    '0xc000018d': 'Trust relationship failed',
+    '0xc0000192': 'Netlogon not started',
+    '0xc0000193': 'Account expired',
+    '0xc0000224': 'Password must change',
+    '0xc0000234': 'Account locked out',
+    '0xc0000413': 'Authentication firewall',
+}
 
-    # Changed relationship creation from MERGE to CREATE to log all repeated events
-    query = f"""
-    MERGE (c:Case {{case_id: $case_id}})
-    MERGE (source:{source_label} {{entity_id: $s_id, case_id: $case_id}})
-    ON CREATE SET source.name = $s_name
-    MERGE (target:{target_label} {{entity_id: $t_id, case_id: $case_id}})
-    ON CREATE SET target.name = $t_name
-    CREATE (source)-[r:{rel_type}]->(target)
-    SET r += $details
-    """
-    try:
-        tx.run(query, case_id=case_id, s_id=s_id, s_name=s_name, t_id=t_id, t_name=t_name, details=details)
-    except Exception as e:
-        logger.error(f"Failed to insert relationship '{rel_type}': {e}")
+_ENCRYPTION_TYPE_MAP = {
+    '0x1':        'DES-CBC-CRC legacy',
+    '0x3':        'DES-CBC-MD5 legacy',
+    '0x11':       'AES128-CTS-HMAC-SHA1',
+    '0x12':       'AES256-CTS-HMAC-SHA1',
+    '0x17':       'RC4-HMAC legacy',
+    '0x18':       'RC4-HMAC-EXP legacy',
+    '0xffffffff': 'N/A',
+}
 
-def _resolve_user(data_map, name_key, sid_key, sid_map):
-    """Resolves a generic username using the SID map if the name is missing."""
-    name = data_map.get(name_key, "")
-    if name and name != '-': 
-        return name
-    
-    sid = data_map.get(sid_key, "")
-    if sid in sid_map: 
-        return sid_map[sid]
-        
-    return sid if sid and sid != '-' else "Unknown_User"
+_PROTOCOL_MAP = {
+    '1':  'ICMP',
+    '6':  'TCP',
+    '17': 'UDP',
+    '41': 'IPv6',
+    '47': 'GRE',
+    '58': 'ICMPv6',
+}
+
+_FIELD_MAPS = {
+    'Status':               _NTSTATUS_MAP,
+    'SubStatus':            _NTSTATUS_MAP,
+    'FailureCode':          _KERBEROS_STATUS_MAP,
+    'TicketEncryptionType': _ENCRYPTION_TYPE_MAP,
+    'Protocol':             _PROTOCOL_MAP,
+    'PreAuthType':          _PRE_AUTH_TYPE_MAP,
+}
+
+_CODE_RE = re.compile(r'%%\d+')
 
 
-def _resolve_process(data_map, name_key, id_key, proc_map):
-    pid = data_map.get(id_key, "")
-    name = data_map.get(name_key, "")
-    
-    if name and name != '-': 
-        clean_name = name.split('\\')[-1]
-    elif pid in proc_map: 
-        clean_name = proc_map[pid]
-    else:
-        clean_name = "Unknown_Process"
-        
-    pid_val = pid if pid and pid != '-' else clean_name
-    
-    return (pid_val, clean_name)
+def _interpret_value(field_name: str, raw: str) -> str:
+    if not raw or raw == '-':
+        return raw
+    field_map = _FIELD_MAPS.get(field_name)
+    if field_map:
+        interp = field_map.get(raw.lower().strip())
+        if interp:
+            return f"{interp} ({raw})"
+    if _CODE_RE.search(raw):
+        def _replace(m):
+            code = m.group(0)
+            interp = _WINDOWS_CODE_MAP.get(code)
+            return f"{interp} ({code})" if interp else code
+        return _CODE_RE.sub(_replace, raw)
+    return raw
+
+
+def _interpret_details(data_map: dict) -> dict:
+    return {
+        k: _interpret_value(k, v) if isinstance(v, str) else v
+        for k, v in data_map.items()
+        if not k.startswith('_')
+    }
 
 
 def _process_event_logic(tx, case_id, log, sid_map, proc_map):
-    """
-    Routes the parsed log to the correct Neo4j relationship builder based on Event ID.
-    """
-    event_id = log['event_id']
-    host_name = log['host_name']
-    data_map = log['data_map']
-    
-    details = {"event_id": event_id, "timestamp": log['timestamp']}
-    details.update(data_map) 
+    handler = EVENT_HANDLERS.get(log['event_id'])
+    if handler:
+        handler(tx, case_id, log, sid_map, proc_map)
 
-    if event_id == '4624':
-        user = _resolve_user(data_map, 'TargetUserName', 'TargetUserSid', sid_map)
-        _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "LOGGED_IN", details)
-
-    elif event_id == '4672':
-        user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "PRIV_LOGON", details)
-
-    elif event_id == '4625':
-        user = _resolve_user(data_map, 'TargetUserName', 'TargetUserSid', sid_map)
-        _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "FAILED_LOGON", details)
-
-    elif event_id == '4688':
-        src_proc = _resolve_process(data_map, 'ParentProcessName', 'ProcessId', proc_map)
-        dst_proc = _resolve_process(data_map, 'NewProcessName', 'NewProcessId', proc_map)
-        _insert_graph_relationship(tx, case_id, "Process", src_proc, "Process", dst_proc, "PROCESS_CREATED", details)
-
-    elif event_id == '4698':
-        user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        task = data_map.get('TaskName', 'Unknown_Task')
-        _insert_graph_relationship(tx, case_id, "User", user, "Task", task, "TASK_CREATED", details)
-
-    elif event_id == '5156':
-        proc = _resolve_process(data_map, 'Application', 'ProcessId', proc_map)
-        _insert_graph_relationship(tx, case_id, "Process", proc, "Computer", host_name, "NETWORK_CONNECTION", details)
-
-    elif event_id == '4697':
-        user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        service = data_map.get('ServiceName', 'Unknown_Service')
-        _insert_graph_relationship(tx, case_id, "User", user, "Service", service, "SERVICE_INSTALLED", details)
-
-    elif event_id == '4657':
-        proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
-        obj_name = data_map.get('ObjectName', '')
-        val_name = data_map.get('ObjectValueName', '')
-        operation_type = data_map.get('OperationType', '').strip()
-
-        reg_path = f"{obj_name}\\{val_name}" if val_name else obj_name
-        if not reg_path or reg_path == "-": 
-            reg_path = "Unknown_Registry_Key"
-
-        action_type = "REGISTRY_MODIFIED"
-        
-        if operation_type == '%%1904':
-            action_type = "REGISTRY_VALUE_CREATED"
-        elif operation_type == '%%1905':
-            action_type = "REGISTRY_VALUE_MODIFIED"
-        elif operation_type == '%%1906':
-            action_type = "REGISTRY_VALUE_DELETED"
-            
-        _insert_graph_relationship(tx, case_id, "Process", proc, "Registry", reg_path, action_type, details)
-
-    elif event_id == '4720':
-        src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        dst_user = _resolve_user(data_map, 'TargetUserName', 'TargetSid', sid_map)
-        _insert_graph_relationship(tx, case_id, "User", src_user, "User", dst_user, "USER_CREATED", details)
-
-    elif event_id == '4648':
-        src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        dst_user = _resolve_user(data_map, 'TargetUserName', 'TargetUserSid', sid_map)
-        _insert_graph_relationship(tx, case_id, "User", src_user, "User", dst_user, "EXPLICIT_CREDS_USED", details)
-        
-        target_server = data_map.get('TargetServerName', '-')
-        if target_server and target_server.lower() not in ["localhost", "127.0.0.1", "-"]:
-            _insert_graph_relationship(tx, case_id, "User", src_user, "Computer", target_server.lower(), "REMOTE_ACCESS", details)
-
-    elif event_id == '4696':
-        proc = _resolve_process(data_map, 'ProcessName', 'TargetProcessId', proc_map)
-        user = _resolve_user(data_map, 'TargetUserName', 'TargetUserSid', sid_map)
-        _insert_graph_relationship(tx, case_id, "Process", proc, "User", user, "TOKEN_ASSIGNED", details)
-
-    elif event_id == '4663':
-        proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
-        file_obj = data_map.get('ObjectName', 'Unknown_Object')
-        access_mask_str = data_map.get('AccessMask', '').strip().lower()
-        action_type = None
-
-        if access_mask_str.startswith('0x'):
-            try:
-                mask_val = int(access_mask_str, 16)
-                
-                if mask_val & 0x10000:
-                    action_type = "OBJECT_ACCESSED_DELETE"
-                elif mask_val & 0x2:
-                    action_type = "OBJECT_ACCESSED_WRITE"
-                elif mask_val & 0x4:
-                    action_type = "OBJECT_ACCESSED_APPEND"
-                elif mask_val & 0x1:
-                    action_type = "OBJECT_ACCESSED_READ"
-                elif mask_val & 0x20:
-                    action_type = "OBJECT_ACCESSED_EXECUTE"
-            except ValueError:
-                pass
-            if action_type:
-                _insert_graph_relationship(tx, case_id, "Process", proc, "File", file_obj, action_type, details)
-    elif event_id == '1102':
-        user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        _insert_graph_relationship(tx, case_id, "User", user, "Computer", host_name, "AUDIT_LOG_CLEARED", details)
-    
-    elif event_id == '4769':
-        user = _resolve_user(data_map, 'TargetUserName', 'TargetUserSid', sid_map)
-        service_name = data_map.get('ServiceName', 'Unknown_Service')
-        ip_address = data_map.get('IpAddress', '')
-        
-        # Clean domain suffix from username if present for better readability
-        if '@' in user:
-            user = user.split('@')[0]
-            
-        _insert_graph_relationship(tx, case_id, "User", user, "Computer", service_name, "TICKET_REQUESTED", details)
-        
-        # Map source IP if it's a remote request
-        if ip_address and ip_address not in ['-', '127.0.0.1', '::1']:
-            _insert_graph_relationship(tx, case_id, "Computer", ip_address, "User", user, "USED_IP_FOR_TICKET", details)
-
-    elif event_id == '4726':
-        src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        dst_user = _resolve_user(data_map, 'TargetUserName', 'TargetSid', sid_map)
-        
-        _insert_graph_relationship(tx, case_id, "User", src_user, "User", dst_user, "USER_DELETED", details)
-    elif event_id == '5140':
-        user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        share_name = data_map.get('ShareName', 'Unknown_Share')
-        ip_address = data_map.get('IpAddress', '')
-        
-        
-        _insert_graph_relationship(tx, case_id, "User", user, "File", share_name, "ACCESSED_SHARE", details)
-        
-        
-        if ip_address and ip_address not in ['-', '127.0.0.1', '::1']:
-             _insert_graph_relationship(tx, case_id, "Computer", ip_address, "File", share_name, "REMOTE_SHARE_ACCESS", details)
-    elif event_id == '4732':
-        src_user = _resolve_user(data_map, 'SubjectUserName', 'SubjectUserSid', sid_map)
-        dst_user = _resolve_user(data_map, 'MemberName', 'MemberSid', sid_map)
-        group_name = data_map.get('TargetUserName', 'Unknown_Group')
-        _insert_graph_relationship(tx, case_id, "User", dst_user, "Group", group_name, "ADDED_TO_GROUP", details)
-        _insert_graph_relationship(tx, case_id, "User", src_user, "Group", group_name, "MODIFIED_GROUP", details)
-
-    elif event_id == '4656':
-        proc = _resolve_process(data_map, 'ProcessName', 'ProcessId', proc_map)
-        obj_name = data_map.get('ObjectName', 'Unknown_Object')
-        obj_type = data_map.get('ObjectType', 'Unknown_Type')
-        if obj_type.lower() == 'process':
-             _insert_graph_relationship(tx, case_id, "Process", proc, "Process", obj_name, "REQUESTED_HANDLE", details)
-        else:
-             _insert_graph_relationship(tx, case_id, "Process", proc, "File", obj_name, "REQUESTED_HANDLE", details)
 
 def parse_and_store_evtx(filepath, case_id, case_name, db_client):
     """
-    Parses a Windows EVTX file, extracts relevant forensic events, 
+    Parses a Windows EVTX file, extracts relevant forensic events,
     and stores them as a graph inside Neo4j.
     """
     parsed_logs = []
     sid_map = {}
     proc_map = {}
 
-    # Step 1: Parse XML from EVTX and build entity maps
     with evtx.Evtx(filepath) as logs:
         for record in logs.records():
             try:
                 xml_content = record.xml().replace('xmlns="http://schemas.microsoft.com/win/2004/08/events/event"', '')
                 root = ET.fromstring(xml_content)
-                
+
                 system_node = root.find(".//System")
                 if system_node is None: continue
-                    
+
                 event_id_node = system_node.find("EventID")
                 if event_id_node is None: continue
                 event_id = event_id_node.text
 
                 computer_node = system_node.find("Computer")
                 host_name = computer_node.text.lower() if computer_node is not None else "Unknown"
-                
+
                 time_node = system_node.find("TimeCreated")
                 timestamp = time_node.get('SystemTime') if time_node is not None else "-"
 
                 data_items = root.findall(".//EventData/Data")
                 data_map = {item.get('Name'): (item.text or "") for item in data_items}
-                # Add this block to support UserData payloads like Event 1102
-                
+                data_map['_host_name'] = host_name
+
                 if not data_map:
                     user_data = root.find(".//UserData")
                     if user_data is not None and len(user_data) > 0:
@@ -267,14 +244,12 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
                             clean_tag = child.tag.split('}')[-1]
                             data_map[clean_tag] = child.text or ""
 
-                # Build SID mapping for user resolution
                 for sid_key, name_key in [('SubjectUserSid', 'SubjectUserName'), ('TargetUserSid', 'TargetUserName'), ('TargetSid', 'TargetUserName')]:
                     sid = data_map.get(sid_key)
                     name = data_map.get(name_key)
                     if sid and name and name not in ['-', ''] and sid != 'S-1-0-0':
                         sid_map[sid] = name
 
-                # Build Process ID mapping
                 for id_key, name_key in [('ProcessId', 'ProcessName'), ('NewProcessId', 'NewProcessName'), ('TargetProcessId', 'ProcessName')]:
                     pid = data_map.get(id_key)
                     pname = data_map.get(name_key)
@@ -285,37 +260,54 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
                     'event_id': event_id,
                     'host_name': host_name,
                     'timestamp': timestamp,
-                    'data_map': data_map
+                    'data_map': data_map,
+                    'details': {"event_id": event_id, "timestamp": timestamp, **_interpret_details(data_map)},
                 })
-            except Exception as e:
-                # Silently skip malformed individual log entries but continue processing
+            except Exception:
                 continue
 
-    # Step 2: Insert into Neo4j in batches
     with db_client.driver.session() as session:
         tx = session.begin_transaction()
         try:
-            # Initialize the investigation metadata node
             tx.run(
-                "CREATE (i:Investigation {case_id: $case_id, name: $name, created_at: timestamp()})", 
-                case_id=case_id, 
+                "CREATE (i:Investigation {case_id: $case_id, name: $name, created_at: timestamp()})",
+                case_id=case_id,
                 name=case_name
             )
+            tx.commit()
+        except Exception as e:
+            try:
+                tx.rollback()
+            except Exception:
+                pass
+            logger.error(f"Failed to create investigation node: {e}")
+            raise
 
-            for count, log in enumerate(parsed_logs):
+        tx = session.begin_transaction()
+        for count, log in enumerate(parsed_logs):
+            try:
                 _process_event_logic(tx, case_id, log, sid_map, proc_map)
+            except Exception as e:
+                logger.warning(f"Handler error for event {log['event_id']}, skipping and restarting transaction: {e}")
+                try:
+                    tx.rollback()
+                except Exception:
+                    pass
+                tx = session.begin_transaction()
+                continue
 
-                # Commit in batches of 2000 to prevent memory exhaustion
-                if count > 0 and count % 2000 == 0:
-                    tx.commit()
-                    tx = session.begin_transaction()
+            if count > 0 and count % 2000 == 0:
+                tx.commit()
+                tx = session.begin_transaction()
 
+        try:
             tx.commit()
             logger.info(f"Successfully processed and stored EVTX for case {case_id}")
-            
         except Exception as e:
-            tx.rollback()
-            logger.error(f"Transaction failed during EVTX storage: {e}")
-            raise
-    
+            logger.warning(f"Final commit partial failure, some events may be missing: {e}")
+            try:
+                tx.rollback()
+            except Exception:
+                pass
+
     return case_id

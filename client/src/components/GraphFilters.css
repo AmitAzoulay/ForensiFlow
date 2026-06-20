@@ -214,6 +214,7 @@
 .badge-field  { background: #d1fae5; color: #065f46; }
 .badge-node   { background: #fef3c7; color: #92400e; }
 .badge-op     { background: #f1f5f9; color: #475569; }
+.badge-value  { background: #fce7f3; color: #9d174d; }
 
 /* Save query button */
 .save-query-btn {

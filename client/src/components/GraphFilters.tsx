@@ -40,60 +40,49 @@ function getTokenAtEnd(query: string): { token: string; start: number } {
 }
 
 function computeSuggestions(token: string, links: any[], nodes: any[], hasContentBefore: boolean): Suggestion[] {
-    const valueMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+)\.([a-zA-Z0-9_]+)==(.*)$/i);
+    const valueMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+|\*)\.([a-zA-Z0-9_]+)==(.*)$/i);
     if (valueMatch) {
-        const [, id, field, valPrefix] = valueMatch;
+        const [, id, field, valuePrefix] = valueMatch;
         const isNumeric = /^\d+$/.test(id);
         const matchingLinks = links.filter(l =>
-            isNumeric
-                ? (l.details?.event_id?.toString() === id || l.details?.EventID?.toString() === id)
-                : (l.type || '').toLowerCase() === id.toLowerCase()
+            id === '*'
+                ? true
+                : isNumeric
+                    ? (l.details?.event_id?.toString() === id || l.details?.EventID?.toString() === id)
+                    : (l.type || '').toLowerCase() === id.toLowerCase()
         );
 
-        const possibleValues = new Set<string>();
-        const lowerField = field.toLowerCase();
-
-        const getNodeName = (idOrObj: any) => {
-            const nodeId = typeof idOrObj === 'object' ? idOrObj.id : idOrObj;
-            const node = nodes.find(n => n.id === nodeId);
-            return (node?.properties?.name || node?.name || nodeId || '').toString();
+        const getNodeById = (idOrObj: any): string => {
+            const id = typeof idOrObj === 'object' ? idOrObj?.id : idOrObj;
+            const found = nodes.find(n => n.id === id);
+            return found?.properties?.name || found?.name || id || '';
         };
 
-        matchingLinks.forEach(l => {
-            if (lowerField === 'src' || lowerField === 'source') {
-                const name = getNodeName(l.source);
-                if (name) possibleValues.add(name);
-            } else if (lowerField === 'target' || lowerField === 'dst') {
-                const name = getNodeName(l.target);
-                if (name) possibleValues.add(name);
-            } else if (l.details && field in l.details) {
-                const val = l.details[field];
-                if (val !== null && val !== undefined && val !== '') {
-                    possibleValues.add(val.toString());
-                }
-            }
-        });
+        const lowerField = field.toLowerCase();
+        const isSrc = lowerField === 'src' || lowerField === 'source';
+        const isDst = lowerField === 'dst' || lowerField === 'target';
 
-        const valPrefixLower = valPrefix.toLowerCase();
-        const results: Suggestion[] = [];
+        const rawValues = [...new Set(
+            matchingLinks
+                .map((l: any) => {
+                    if (isSrc) return getNodeById(l.source);
+                    if (isDst) return getNodeById(l.target);
+                    return l.details?.[field]?.toString();
+                })
+                .filter(Boolean)
+        )] as string[];
 
-        Array.from(possibleValues)
-            .filter(v => v.toLowerCase().startsWith(valPrefixLower))
+        const prefixLower = valuePrefix.toLowerCase();
+        return rawValues
+            .filter(v => v.toLowerCase().includes(prefixLower))
             .slice(0, 8)
-            .forEach(v => {
-                let completionValue = v;
-                if (/[\s()]/.test(v) && !v.startsWith('"') && !v.startsWith("'")) {
-                    completionValue = `"${v}"`;
-                }
-                results.push({
-                    label: v,
-                    badge: 'value',
-                    completion: `${id}.${field}==${completionValue} `
-                });
-            });
-
-        return results;
+            .map(v => ({
+                label: v,
+                badge: 'value',
+                completion: `${id}.${field}=="${v}"`,
+            }));
     }
+
 
     const fieldMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+)\.([a-zA-Z0-9_]*)$/);
     if (fieldMatch) {

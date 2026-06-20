@@ -175,3 +175,63 @@
     background-color: #cbd5e1;
     cursor: not-allowed;
 }
+
+.ai-reparse-prompt {
+    background-color: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.875rem;
+    color: #0c4a6e;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ai-reparse-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.ai-reparse-yes {
+    background-color: #0ea5e9;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ai-reparse-yes:hover {
+    background-color: #0284c7;
+}
+
+.ai-reparse-skip {
+    background: none;
+    border: 1px solid #94a3b8;
+    border-radius: 5px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    color: #64748b;
+    cursor: pointer;
+}
+
+.ai-reparse-skip:hover {
+    background-color: #f1f5f9;
+}
+
+.ai-code-block {
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.72rem;
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 6px 0 2px;
+    display: block;
+    line-height: 1.5;
+}

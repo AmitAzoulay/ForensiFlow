@@ -75,25 +75,42 @@ const LogPanel: React.FC<LogPanelProps> = ({
 
         const accessTypes: string[] = [];
 
-        if (hexVal & 0x1) accessTypes.push('Read');
-        if (hexVal & 0x2) accessTypes.push('Write');
-        if (hexVal & 0x4) accessTypes.push('Append');
-        if (hexVal & 0x20) accessTypes.push('Execute');
-        if (hexVal & 0x40) accessTypes.push('Delete Child');
-        if (hexVal & 0x10000) accessTypes.push('Delete');
-        if (hexVal & 0x40000) accessTypes.push('Write DAC');
-        if (hexVal & 0x80000) accessTypes.push('Write Owner');
+        if (hexVal & 0x1)      accessTypes.push('Read Data / List Dir');
+        if (hexVal & 0x2)      accessTypes.push('Write Data / Add File');
+        if (hexVal & 0x4)      accessTypes.push('Append Data / Add Subdir');
+        if (hexVal & 0x8)      accessTypes.push('Read Extended Attrs');
+        if (hexVal & 0x10)     accessTypes.push('Write Extended Attrs');
+        if (hexVal & 0x20)     accessTypes.push('Execute / Traverse');
+        if (hexVal & 0x40)     accessTypes.push('Delete Child');
+        if (hexVal & 0x80)     accessTypes.push('Read Attributes');
+        if (hexVal & 0x100)    accessTypes.push('Write Attributes');
+        if (hexVal & 0x10000)  accessTypes.push('Delete');
+        if (hexVal & 0x20000)  accessTypes.push('Read Control');
+        if (hexVal & 0x40000)  accessTypes.push('Write DAC');
+        if (hexVal & 0x80000)  accessTypes.push('Write Owner');
         if (hexVal & 0x100000) accessTypes.push('Synchronize');
 
         return accessTypes.length > 0 ? `${maskStr} (${accessTypes.join(', ')})` : maskStr;
     };
 
-    const formatOperationType = (opTypeStr: string): string => {
-        if (opTypeStr.includes('1904')) return `${opTypeStr} (New registry value created)`;
-        if (opTypeStr.includes('1905')) return `${opTypeStr} (Existing registry value modified)`;
-        if (opTypeStr.includes('1906')) return `${opTypeStr} (Registry value deleted)`;
+    const formatTicketOptions = (optStr: string): string => {
+        const hexVal = parseInt(optStr, 16);
+        if (isNaN(hexVal)) return optStr;
 
-        return opTypeStr;
+        const flags: string[] = [];
+        if (hexVal & 0x40000000) flags.push('Forwardable');
+        if (hexVal & 0x20000000) flags.push('Forwarded');
+        if (hexVal & 0x10000000) flags.push('Proxiable');
+        if (hexVal & 0x08000000) flags.push('Proxy');
+        if (hexVal & 0x02000000) flags.push('Postdated');
+        if (hexVal & 0x01000000) flags.push('Invalid');
+        if (hexVal & 0x00800000) flags.push('Renewable');
+        if (hexVal & 0x00200000) flags.push('Initial');
+        if (hexVal & 0x00100000) flags.push('Pre-Authenticated');
+        if (hexVal & 0x00080000) flags.push('HW-Authenticated');
+        if (hexVal & 0x00010000) flags.push('OK-as-Delegate');
+
+        return flags.length > 0 ? `${optStr} (${flags.join(', ')})` : optStr;
     };
 
     const formatLogonType = (type: string): string => {
@@ -147,8 +164,8 @@ const LogPanel: React.FC<LogPanelProps> = ({
         if (key === 'AccessMask' || key === 'Accesses') {
             return formatAccessMask(strVal);
         }
-        if (key === 'OperationType') {
-            return formatOperationType(strVal);
+        if (key === 'TicketOptions') {
+            return formatTicketOptions(strVal);
         }
         if (key === 'ServiceStartType') {
             return formatStartType(strVal);
@@ -161,6 +178,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
         }
         return strVal;
     };
+
 
 
     const handleRowContextMenu = (e: React.MouseEvent, fieldName: string, value: string) => {
