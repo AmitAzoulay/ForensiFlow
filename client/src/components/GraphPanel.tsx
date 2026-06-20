@@ -490,9 +490,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
 
     return (
         <div className="graph-panel-container">
-            <div className="top-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '12px 24px', backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+            <div className="top-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '16px 32px', gap: '24px', backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '24px', minWidth: '300px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
                     <h2 className="toolbar-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>ForensiFlow</h2>
                     <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '4px', border: '1px solid #e2e8f0' }}>
                         <button
@@ -520,7 +520,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flex: 1, minWidth: 0, overflow: 'hidden' }}>
                     {mode === 'new' ? (
                         <>
                             <input
@@ -538,7 +538,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])}
                                 disabled={isPlaybackMode}
                             />
-                            <button className="btn-primary" onClick={processNewInvestigation} disabled={!selectedFile || status === 'uploading' || isPlaybackMode}>
+                            <button className="btn-primary" onClick={processNewInvestigation} disabled={!selectedFile || status === 'uploading' || isPlaybackMode} style={{ minWidth: '90px' }}>
                                 {status === 'uploading' ? 'Analyzing...' : 'Analyze'}
                             </button>
                         </>
@@ -570,14 +570,14 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     </svg>
                                 </button>
                             </div>
-                            <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode}>
+                            <button className="btn-primary" onClick={fetchExistingInvestigation} disabled={!selectedCaseId || status === 'uploading' || isPlaybackMode} style={{ minWidth: '90px' }}>
                                 {status === 'uploading' ? 'Loading...' : 'Load'}
                             </button>
                         </>
                     )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', minWidth: '300px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>
                     {caseId && !isPlaybackMode && hasRedItems && onDownloadReport && (
                         <button
                             onClick={onDownloadReport}
