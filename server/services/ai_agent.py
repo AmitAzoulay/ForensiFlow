@@ -16,6 +16,8 @@ Intents:
 - "handler_explain": user wants to understand why a handler was built the way it was — e.g. why a certain event ID or relationship type was chosen
 - "forensic": user wants to analyze, investigate, summarize, or ask about the current case
 
+CRITICAL RULE: If the message contains any of the phrases "add a handler", "create a handler", "generate a handler", "make a handler", "build a handler", "write a handler", or "add handler" — it is ALWAYS "handler" intent, no matter what the subject is. The topic (e.g. "port bindings", "process injection", "lateral movement") is the behaviour to detect, not a forensic question.
+
 For "handler" intent:
 - Extract the Windows Event ID if the user stated one explicitly (4-5 digits); otherwise leave event_id as null and let the handler generator pick the right event.
 - Write a full description of what the handler should detect.
