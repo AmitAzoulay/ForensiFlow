@@ -202,10 +202,7 @@ def _interpret_details(data_map: dict) -> dict:
 def _process_event_logic(tx, case_id, log, sid_map, proc_map):
     handler = EVENT_HANDLERS.get(log['event_id'])
     if handler:
-        try:
-            handler(tx, case_id, log, sid_map, proc_map)
-        except Exception as e:
-            logger.error(f"Handler failed for event {log['event_id']}: {e}")
+        handler(tx, case_id, log, sid_map, proc_map)
 
 
 def parse_and_store_evtx(filepath, case_id, case_name, db_client):
@@ -277,20 +274,40 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
                 case_id=case_id,
                 name=case_name
             )
+            tx.commit()
+        except Exception as e:
+            try:
+                tx.rollback()
+            except Exception:
+                pass
+            logger.error(f"Failed to create investigation node: {e}")
+            raise
 
-            for count, log in enumerate(parsed_logs):
+        tx = session.begin_transaction()
+        for count, log in enumerate(parsed_logs):
+            try:
                 _process_event_logic(tx, case_id, log, sid_map, proc_map)
+            except Exception as e:
+                logger.warning(f"Handler error for event {log['event_id']}, skipping and restarting transaction: {e}")
+                try:
+                    tx.rollback()
+                except Exception:
+                    pass
+                tx = session.begin_transaction()
+                continue
 
-                if count > 0 and count % 2000 == 0:
-                    tx.commit()
-                    tx = session.begin_transaction()
+            if count > 0 and count % 2000 == 0:
+                tx.commit()
+                tx = session.begin_transaction()
 
+        try:
             tx.commit()
             logger.info(f"Successfully processed and stored EVTX for case {case_id}")
-
         except Exception as e:
-            tx.rollback()
-            logger.error(f"Transaction failed during EVTX storage: {e}")
-            raise
+            logger.warning(f"Final commit partial failure, some events may be missing: {e}")
+            try:
+                tx.rollback()
+            except Exception:
+                pass
 
     return case_id

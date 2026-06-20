@@ -103,7 +103,4 @@ def _insert_graph_relationship(tx, case_id, source_label, source_data, target_la
     CREATE (source)-[r:{rel_type}]->(target)
     SET r += $details
     """
-    try:
-        tx.run(query, case_id=case_id, s_id=s_id, s_name=s_name, t_id=t_id, t_name=t_name, details=details)
-    except Exception as e:
-        logger.error(f"Failed to insert relationship '{rel_type}': {e}")
+    tx.run(query, case_id=case_id, s_id=s_id, s_name=s_name, t_id=t_id, t_name=t_name, details=details)
