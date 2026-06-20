@@ -66,8 +66,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
             if (data.intent === 'handler') {
                 if (data.summary) {
                     aiContent = data.summary;
-                    // Store reasoning in handler history so follow-up questions can reference it,
-                    // but only show the summary in the visible chat.
                     const historyContent = data.reasoning
                         ? `${data.summary}\n\nReasoning:\n${data.reasoning}`
                         : data.summary;
@@ -91,18 +89,20 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                     setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
                 }
             } else if (isHandlerIntent) {
-                // list_handlers or remove_handler
                 aiContent = data.reply ?? `Error: ${data.error}`;
                 setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
             } else {
-                // forensic
                 aiContent = data.reply ?? `Error: ${data.error}`;
                 setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
             }
 
             setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
-        } catch {
-            setMessages(prev => [...prev, { role: 'ai', content: 'Error connecting to ForensiFlow AI server.' }]);
+        } catch (error: any) {
+            if (error?.response?.status === 429 || error?.message?.includes('429')) {
+                setMessages(prev => [...prev, { role: 'ai', content: 'AI is overloaded right now. Please wait 60 seconds and try again.' }]);
+            } else {
+                setMessages(prev => [...prev, { role: 'ai', content: 'Error connecting to ForensiFlow AI server.' }]);
+            }
         } finally {
             setIsLoading(false);
         }

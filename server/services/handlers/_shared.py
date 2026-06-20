@@ -100,7 +100,7 @@ def _insert_graph_relationship(tx, case_id, source_label, source_data, target_la
     ON CREATE SET source.name = $s_name
     MERGE (target:{target_label} {{entity_id: $t_id, case_id: $case_id}})
     ON CREATE SET target.name = $t_name
-    MERGE (source)-[r:{rel_type}]->(target)
+    CREATE (source)-[r:{rel_type}]->(target)
     SET r += $details
     """
     try:

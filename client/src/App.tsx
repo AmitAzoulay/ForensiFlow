@@ -139,15 +139,43 @@ function App() {
     );
   };
 
-  const handleSendToAI = (type: 'node' | 'link', data: any) => {
+ const handleSendToAI = (type: 'node' | 'link', data: any) => {
+    // --- Data Flattening Helper ---
+    const flattenData = (obj: any): string => {
+        if (!obj) return "No details available";
+        let parts: string[] = [];
+        
+        const extract = (d: any, prefix = '') => {
+            if (typeof d !== 'object' || d === null) {
+                parts.push(`${prefix.replace(/_$/, '')}: ${d}`);
+                return;
+            }
+            for (const [key, value] of Object.entries(d)) {
+                if (value === null || value === undefined || value === "") continue;
+                if (key.toLowerCase() === 'id' || key.toLowerCase() === 'label') continue; // Skip internal Neo4j noise
+                
+                if (typeof value === 'object') {
+                    extract(value, `${prefix}${key}_`);
+                } else {
+                    parts.push(`${prefix}${key}: ${value}`);
+                }
+            }
+        };
+        
+        extract(obj);
+        return parts.length > 0 ? parts.join(' | ') : "No details available";
+    };
+
     if (type === 'node') {
       const nodeName = data.properties?.name || data.name || data.id;
+      const nodeDetails = flattenData(data.properties || data);
+      
       setExternalAIPrompt({
-        text: `TACTICAL ANALYSIS REQUIRED: I am investigating the entity "${nodeName}".\nDO NOT define what this entity is. Focus on this node, its connected entities, and related chronological graph logs you have in your context.\n\nTell me:\n1. Why would an attacker target or use this entity?\n2. What specific anomalies or connections should I look for NEXT in the graph to confirm suspicious activity?`,
+        text: `TACTICAL ANALYSIS REQUIRED: I am investigating the entity "${nodeName}".\nDetails: ${nodeDetails}\nDO NOT define what this entity is. Focus on this node, its connected entities, and related chronological graph logs you have in your context.\n\nTell me:\n1. Why would an attacker target or use this entity?\n2. What specific anomalies or connections should I look for NEXT in the graph to confirm suspicious activity?`,
         timestamp: Date.now()
       });
     } else if (type === 'link') {
-      const logDetails = data?.details ? JSON.stringify(data.details, null, 2) : "No details available";
+      const logDetails = flattenData(data.details);
       const sourceName = data?.source?.properties?.name || data?.source?.name || "Unknown Source";
       const targetName = data?.target?.properties?.name || data?.target?.name || "Unknown Target";
       const actionType = data?.type || "Unknown Action";

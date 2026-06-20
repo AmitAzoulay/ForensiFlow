@@ -6,15 +6,18 @@ import re
 import sys
 import uuid
 from pathlib import Path
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 from database import Neo4jClient
-from services.ai_agent import classify_intent, generate_forensic_response, generate_report_narrative, generate_event_handler
+from services.ai_agent import (
+    classify_intent, generate_forensic_response, generate_report_narrative,
+    generate_event_handler, translate_single_log, generate_log_translation
+)
 from services.handlers import deregister_handler
 from services.evtx_parser import parse_and_store_evtx
-
 import pandas as pd
 import io
 from flask import send_file
@@ -265,6 +268,23 @@ def upload_and_parse_evtx():
             logger.error(f"Parsing failed: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
         
+@app.route('/api/translate-log', methods=['POST'])
+def process_log_translation():
+    data = request.json
+    log_details = data.get('log_details')
+
+    if not log_details:
+        return jsonify({"error": "Missing log details"}), 400
+
+    try:
+        translation = translate_single_log(log_details)
+        return jsonify({"reply": translation}), 200
+    except Exception as e:
+        if str(e) == "RATE_LIMIT":
+            return jsonify({"reply": "AI rate limit reached. Please wait a minute."}), 429
+        logger.error(f"Translation error: {e}")
+        return jsonify({"error": "Failed to translate log"}), 500
+
 @app.route('/api/ai-chat', methods=['POST'])
 def process_ai_chat():
     data = request.json
@@ -279,11 +299,48 @@ def process_ai_chat():
         if not timeline:
              return jsonify({"reply": "No data in the current graph to analyze. Load an EVTX file first."})
              
-        ai_reply = generate_forensic_response(timeline, chat_history)
+        if len(chat_history) > 20:
+            chat_history = chat_history[-20:]
+
+        compressed_timeline = []
+        for item in timeline:
+            if not isinstance(item, dict):
+                compressed_timeline.append(str(item).replace('\n', ' '))
+                continue
+            
+            flat_item = {}
+            def flatten(d, prefix=''):
+                for k, v in d.items():
+                    new_key = f"{prefix}{k}" if prefix else k
+                    if isinstance(v, dict):
+                        flatten(v, f"{new_key}_")
+                    else:
+                        flat_item[new_key] = v
+            
+            flatten(item)
+            
+            parts = []
+            for k, v in flat_item.items():
+                if "id" not in k.lower() and "label" not in k.lower() and v not in [None, "", [], {}]:
+                    parts.append(f"{k}: {v}")
+            
+            compressed_timeline.append(" | ".join(parts))
+
+        logger.info(f"Sending request to AI with {len(compressed_timeline)} log lines and {len(chat_history)} chat messages.")
+
+        ai_reply = generate_forensic_response(compressed_timeline, chat_history)
         return jsonify({"reply": ai_reply}), 200
         
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            return jsonify({"reply": "AI is overloaded right now. Please wait 60 seconds."}), 429
+        return jsonify({"error": "Failed to process AI request"}), 500
     except Exception as e:
+        if "429" in str(e) or "RATE_LIMIT" in str(e):
+            return jsonify({"reply": "AI rate limit reached. Please wait 60 seconds."}), 429
         logger.error(f"AI Chat processing error: {e}")
+        if "429" in str(e) or "RATE_LIMIT" in str(e) or "quota" in str(e).lower():
+             return jsonify({"reply": "AI quota has been reached. Please wait a minute and try again."}), 429
         return jsonify({"error": "Failed to process AI request"}), 500
     
 @app.route('/api/chat', methods=['POST'])
@@ -624,6 +681,22 @@ def generate_forensic_report():
     except Exception as e:
         print(f"Error generating report: {e}")
         return {"error": str(e)}, 500
+    
+@app.route('/api/translate-log', methods=['POST'])
+def translate_log():
+    data = request.json
+    log_details = data.get('details')
+    
+    if not log_details:
+        return jsonify({"error": "Missing log details"}), 400
+
+    try:
+        # שליחה רק של פרטי הלוג הספציפי ללא ההיסטוריה
+        translation = generate_log_translation(str(log_details))
+        return jsonify({"reply": translation}), 200
+    except Exception as e:
+        logger.error(f"Translation route error: {e}")
+        return jsonify({"error": "Failed to translate log"}), 500
 
 if __name__ == '__main__':
     logger.info("ForensiFlow API Server starting on port 8000...")

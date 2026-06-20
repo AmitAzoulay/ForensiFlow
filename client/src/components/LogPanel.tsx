@@ -88,6 +88,13 @@ const LogPanel: React.FC<LogPanelProps> = ({
         return accessTypes.length > 0 ? `${maskStr} (${accessTypes.join(', ')})` : maskStr;
     };
 
+    const formatOperationType = (opTypeStr: string): string => {
+        if (opTypeStr.includes('1904')) return `${opTypeStr} (New registry value created)`;
+        if (opTypeStr.includes('1905')) return `${opTypeStr} (Existing registry value modified)`;
+        if (opTypeStr.includes('1906')) return `${opTypeStr} (Registry value deleted)`;
+
+        return opTypeStr;
+    };
 
     const formatLogonType = (type: string): string => {
         const types: Record<string, string> = {
@@ -140,6 +147,9 @@ const LogPanel: React.FC<LogPanelProps> = ({
         if (key === 'AccessMask' || key === 'Accesses') {
             return formatAccessMask(strVal);
         }
+        if (key === 'OperationType') {
+            return formatOperationType(strVal);
+        }
         if (key === 'ServiceStartType') {
             return formatStartType(strVal);
         }
@@ -152,6 +162,8 @@ const LogPanel: React.FC<LogPanelProps> = ({
         return strVal;
     };
 
+
+
     const handleRowContextMenu = (e: React.MouseEvent, fieldName: string, value: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -159,20 +171,31 @@ const LogPanel: React.FC<LogPanelProps> = ({
     };
 
     const handleTranslateLog = async () => {
-        if (!selectedLink || !caseId) return;
+        if (!selectedLink) return;
         setIsTranslating(true);
         try {
             const logDetails = JSON.stringify(selectedLink.details, null, 2);
-            const prompt = `INSTRUCTION: Briefly explain this Windows event log in one simple sentence in English. No technical jargon. CRITICAL: Do not suggest next steps. Telemetry: ${logDetails}`; 
-            
-            const response = await apiService.sendChatMessage(caseId, [{ role: 'user', content: prompt }]);
-            if (response.reply) {
-                setAiTranslation(response.reply);
+
+            const response = await fetch('http://localhost:8000/api/translate-log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ case_id: caseId, log_details: logDetails })
+            });
+
+            if (response.status === 429) {
+                setAiTranslation("Rate limit exceeded. Please wait a minute before requesting another explanation.");
+                setIsTranslating(false);
+                return;
+            }
+
+            const data = await response.json();
+            if (data.reply) {
+                setAiTranslation(data.reply);
             } else {
-                setAiTranslation("Failed to generate translation.");
+                setAiTranslation(`Error: ${data.error || 'Failed to translate'}`);
             }
         } catch (error) {
-            setAiTranslation("Error connecting to AI service.");
+            setAiTranslation("Error connecting to ForensiFlow AI server.");
         } finally {
             setIsTranslating(false);
         }
@@ -183,9 +206,9 @@ const LogPanel: React.FC<LogPanelProps> = ({
             <div className="log-panel-header">
                 <h2>Log Panel</h2>
                 {selectedLink && (
-                    <button 
-                        className="header-ai-btn" 
-                        onClick={handleTranslateLog} 
+                    <button
+                        className="header-ai-btn"
+                        onClick={handleTranslateLog}
                         disabled={isTranslating || !caseId}
                         data-tooltip="Explain with AI"
                     >
@@ -281,7 +304,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
                                             {key.replace(/_/g, ' ')}
                                         </span>
                                         <span className="data-value inline-value">
-                                            {String(value) || '-'}
+                                            {formatDataValue(key, value)}
                                         </span>
                                     </div>
                                 )

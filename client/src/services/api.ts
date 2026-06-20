@@ -43,6 +43,17 @@ export const apiService = {
         return response.json();
     },
 
+    translateLog: async (details: Record<string, any>) => {
+        const response = await fetch(`${API_BASE_URL}/translate-log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ details })
+        });
+
+        if (!response.ok) throw new Error('Failed to translate log');
+        return response.json();
+    },
+
     deleteInvestigation: async (caseId: string) => {
         const response = await fetch(`${API_BASE_URL}/investigations/${caseId}`, {
             method: 'DELETE'

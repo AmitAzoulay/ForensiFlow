@@ -40,7 +40,6 @@ function getTokenAtEnd(query: string): { token: string; start: number } {
 }
 
 function computeSuggestions(token: string, links: any[], hasContentBefore: boolean): Suggestion[] {
-    // Phase 3: identifier.field==value_prefix  →  suggest actual values
     const valueMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+|\*)\.([a-zA-Z0-9_]+)==(.*)$/i);
     if (valueMatch) {
         const [, id, field, valuePrefix] = valueMatch;
@@ -70,7 +69,7 @@ function computeSuggestions(token: string, links: any[], hasContentBefore: boole
             }));
     }
 
-    // Phase 2: identifier.field_prefix
+
     const fieldMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+)\.([a-zA-Z0-9_]*)$/);
     if (fieldMatch) {
         const [, id, fieldPrefix] = fieldMatch;
@@ -95,7 +94,6 @@ function computeSuggestions(token: string, links: any[], hasContentBefore: boole
         return [...nodeFields, ...detailFields];
     }
 
-    // Phase 1: identifier prefix
     const idMatch = token.match(/^([a-zA-Z0-9_]*)$/);
     if (!idMatch) return [];
 
@@ -181,7 +179,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
 
     const suggestions = useMemo(
         () => computeSuggestions(token, links, hasContentBefore),
-        [token, links, hasContentBefore]
+        [token, links, nodes, hasContentBefore]
     );
 
     const applySuggestion = useCallback((suggestion: Suggestion) => {
@@ -299,7 +297,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                             title="Save current query as a tab"
                         >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"/>
+                                <path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z" />
                             </svg>
                             Save
                         </button>

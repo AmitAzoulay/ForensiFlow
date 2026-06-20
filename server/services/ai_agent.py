@@ -165,6 +165,37 @@ RULES:
 - Conditions (e.g. GUID checks, value filters) belong inside the rule function as an early return.
 """
 
+
+def translate_single_log(log_details):
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        return "API Key is missing."
+
+    system_prompt = "INSTRUCTION: Briefly explain this Windows event log in one simple sentence in English. No technical jargon. CRITICAL: Do not suggest next steps."
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+    headers = {"Content-Type": "application/json"}
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": f"Telemetry: {log_details}"}]}],
+        "generationConfig": {"temperature": 0.2}
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+
+        if response.status_code == 429:
+            raise Exception("RATE_LIMIT")
+
+        response.raise_for_status()
+        response_data = response.json()
+
+        return response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error generating translation.").strip()
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"HTTP request failed during single log translation: {e}")
+        raise
+
 def generate_forensic_response(timeline_lines, chat_history):
     """
     Generates an AI response based on the forensic timeline and user chat history.
@@ -187,7 +218,7 @@ INSTRUCTIONS:
 2. If the user asks for a summary, provide a SINGLE, dense, concise paragraph. No bullet points.
 3. For all other chat messages, answer naturally like a helpful forensic analyst discussing the case.
 4. Focus on anomalies, lateral movement, and persistence.
-5. ALWAYS end your response with a "🔍 Suggested Next Steps:" section, offering 1-2 concrete investigative actions the user can take within a graph database based on the current context.
+
 """
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
@@ -214,6 +245,8 @@ INSTRUCTIONS:
         
         response_data = response.json()
         ai_reply = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error generating response.")
+        usage = response_data.get("usageMetadata", {})
+        logger.info(f"AI Token Usage - Input: {usage.get('promptTokenCount')}, Output: {usage.get('candidatesTokenCount')}, Total: {usage.get('totalTokenCount')}")
         
         return ai_reply.strip()
         
@@ -306,3 +339,41 @@ Your task is to write an "Executive Summary & Chronological Narrative" based on 
     except Exception as e:
         logger.error(f"Unexpected error during narrative generation: {e}")
         return "Error: An unexpected error occurred while generating the narrative."
+
+
+def generate_log_translation(log_details):
+    """
+    Generates a simple, single-sentence translation of a raw log without graph context.
+    """
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        logger.warning("GEMINI_API_KEY is not set. Returning mock translation.")
+        return "Error: API Key missing."
+
+    system_prompt = "You are an expert DFIR analyst. Explain this Windows event log telemetry in one simple sentence in English. No technical jargon. Do not suggest next steps. Just explain what happened."
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+    headers = {"Content-Type": "application/json"}
+    
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": f"Telemetry: {log_details}"}]}],
+        "generationConfig": {"temperature": 0.1}
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        
+        response_data = response.json()
+        
+        # Avoid logging response-derived usage fields to prevent sensitive-data exposure via taint flow
+        usage = response_data.get("usageMetadata", {})
+        logger.info("Translation request completed successfully.")
+        
+        translation = response_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Error").strip()
+        return translation
+        
+    except Exception as e:
+        logger.error(f"Log translation failed: {e}")
+        return "Failed to translate log due to an error."
