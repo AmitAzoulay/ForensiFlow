@@ -7,40 +7,16 @@ logger = logging.getLogger(__name__)
 
 _INTENT_SYSTEM_PROMPT = """You are an intent classifier for ForensiFlow, a Windows EVTX forensics tool.
 
-Classify the user message into exactly one intent and respond with JSON only — no explanation, no markdown, no code fences.
+Classify the user message as either "handler_agent" or "forensic". Respond with JSON only — no explanation, no markdown, no code fences.
 
-Intents:
-- "handler": user wants to add, create, or generate an event handler for any Windows security behaviour — even if they do not mention a specific Event ID
-- "list_handlers": user wants to see all currently registered AI-generated handlers
-- "remove_handler": user wants to delete or remove a specific AI-generated handler
-- "handler_explain": user wants to understand why a handler was built the way it was — e.g. why a certain event ID or relationship type was chosen
-- "forensic": user wants to analyze, investigate, summarize, or ask about the current case
+- "handler_agent": user wants to add, create, generate, remove, list, or explain event handlers
+- "forensic": user wants to analyze, investigate, summarize, or ask questions about the current case data
 
-CRITICAL RULE: If the message contains any of the phrases "add a handler", "create a handler", "generate a handler", "make a handler", "build a handler", "write a handler", or "add handler" — it is ALWAYS "handler" intent, no matter what the subject is. The topic (e.g. "port bindings", "process injection", "lateral movement") is the behaviour to detect, not a forensic question.
+CRITICAL RULE: Any message containing "add a handler", "create a handler", "generate a handler", "make a handler", "build a handler", "write a handler", "add handler", "remove handler", "list handlers", "remove the", or "delete handler" is ALWAYS "handler_agent".
 
-For "handler" intent:
-- Extract the Windows Event ID if the user stated one explicitly (4-5 digits); otherwise leave event_id as null and let the handler generator pick the right event.
-- Write a full description of what the handler should detect.
-- Choose a short snake_case name (2-4 words) derived from the relationships the handler will establish — NOT from the user's phrasing. For example, if the handler creates a ACCOUNT_ENABLED edge, name it "user_account_enabled". Do NOT include "event", "handler", "add", "create", the event ID number, or any filler words.
-
-For "remove_handler" intent, look at the conversation history to resolve what handler the user is referring to. If they say "the last one", "that handler", "the one I just created", "the previous handler", etc., find the actual handler name or event ID from the recent history and use that. Extract only the shortest unique identifying keyword — a behaviour name, event ID, or file stem fragment. Never use generic phrases like "previously created" or "the last one" as the name.
-
-Response format for handler with explicit event ID:
-{"intent": "handler", "event_id": "4688", "description": "detect suspicious process creation", "name": "suspicious_process_creation"}
-
-Response format for handler without explicit event ID:
-{"intent": "handler", "event_id": null, "description": "detect process injection techniques", "name": "process_injection"}
-
-Response format for list_handlers:
-{"intent": "list_handlers"}
-
-Response format for remove_handler:
-{"intent": "remove_handler", "name": "dcsync"}
-
-Response format for handler_explain:
-{"intent": "handler_explain", "name": "password"}
-
-Response format for forensic:
+Response format:
+{"intent": "handler_agent"}
+or
 {"intent": "forensic"}"""
 
 
@@ -51,8 +27,6 @@ def classify_intent(message: str, handler_history: list | None = None) -> dict:
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
 
-    # Include recent handler management turns so the classifier can resolve
-    # references like "remove the last one" or "list them again".
     contents = []
     for msg in (handler_history or [])[-6:]:
         role = "model" if msg.get("role") == "ai" else "user"
@@ -76,6 +50,135 @@ def classify_intent(message: str, handler_history: list | None = None) -> dict:
     except json.JSONDecodeError:
         logger.warning(f"Intent classifier returned non-JSON: {raw!r} — falling back to forensic")
         return {"intent": "forensic"}
+
+
+_HANDLER_TOOLS = [
+    {
+        "functionDeclarations": [
+            {
+                "name": "add_handler",
+                "description": "Generate and register a new Windows event handler. Call once per handler — call multiple times for multiple handlers.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "event_id": {"type": "STRING", "description": "4-5 digit Windows Event ID, or omit to let the generator decide"},
+                        "description": {"type": "STRING", "description": "Full description of what behaviour to detect"},
+                        "name": {"type": "STRING", "description": "Short snake_case name (2-4 words) derived from the relationships the handler creates — NOT from the user's words. Example: a handler creating ACCOUNT_ENABLED edges → 'user_account_enabled'"}
+                    },
+                    "required": ["description", "name"]
+                }
+            },
+            {
+                "name": "remove_handler",
+                "description": "Remove a registered AI-generated handler by name, event ID, or stem fragment. Call once per handler to remove.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Handler name, event ID number, or file stem fragment to match"}
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "list_handlers",
+                "description": "List all currently registered AI-generated event handlers.",
+                "parameters": {"type": "OBJECT", "properties": {}}
+            },
+            {
+                "name": "explain_handler",
+                "description": "Return the reasoning from a specific handler's source code.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Handler name, event ID, or stem fragment"}
+                    },
+                    "required": ["name"]
+                }
+            }
+        ]
+    }
+]
+
+_AGENT_SYSTEM_PROMPT = """You are a handler management agent for ForensiFlow, a Windows EVTX forensics tool.
+
+The user may ask you to add, remove, list, or explain event handlers. Call multiple tools in one response when needed — "add handlers for events 4624 and 4688" should result in two add_handler calls.
+
+For handler names: derive the name from the RELATIONSHIPS the handler creates, not the user's words.
+
+After all tool calls complete, give a brief plain-English summary of what was done."""
+
+
+def run_handler_agent(message: str, handler_history: list, tool_executor) -> dict:
+    """
+    Runs a multi-turn Gemini tool-calling loop for handler management.
+    Phase 1: forced tool-call rounds (mode=ANY) until no more calls come back.
+    Phase 2: one text-only call to get a plain-English summary.
+    Returns {"summary": str, "needs_reparse": bool, "results": list}.
+    """
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is not set")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+    headers = {"Content-Type": "application/json"}
+
+    contents = []
+    for msg in (handler_history or [])[-10:]:
+        role = "model" if msg.get("role") == "ai" else "user"
+        contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
+    contents.append({"role": "user", "parts": [{"text": message}]})
+
+    all_results = []
+    needs_reparse = False
+
+    # Phase 1 — force tool calls until Gemini stops requesting them
+    for _ in range(5):
+        payload = {
+            "systemInstruction": {"parts": [{"text": _AGENT_SYSTEM_PROMPT}]},
+            "contents": contents,
+            "tools": _HANDLER_TOOLS,
+            "toolConfig": {"functionCallingConfig": {"mode": "ANY"}},
+            "generationConfig": {"temperature": 0.0},
+        }
+
+        resp = requests.post(url, json=payload, headers=headers)
+        resp.raise_for_status()
+
+        parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        function_calls = [p["functionCall"] for p in parts if "functionCall" in p]
+
+        if not function_calls:
+            break
+
+        function_responses = []
+        for call in function_calls:
+            result = tool_executor(call["name"], call.get("args", {}))
+            all_results.append({"tool": call["name"], "args": call.get("args", {}), **result})
+            if call["name"] in ("add_handler", "remove_handler") and result.get("status") == "ok":
+                needs_reparse = True
+            function_responses.append({
+                "functionResponse": {"name": call["name"], "response": result}
+            })
+
+        contents.append({"role": "model", "parts": [{"functionCall": c["functionCall"]} for c in parts if "functionCall" in c]})
+        contents.append({"role": "user", "parts": function_responses})
+
+    # Phase 2 — one text-only call to produce the human-readable summary
+    summary_payload = {
+        "systemInstruction": {"parts": [{"text": _AGENT_SYSTEM_PROMPT}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.2},
+    }
+    summary_resp = requests.post(url, json=summary_payload, headers=headers)
+    summary_resp.raise_for_status()
+    summary_parts = summary_resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    final_text = "\n".join(p["text"] for p in summary_parts if "text" in p).strip() or "Done."
+
+    return {
+        "summary": final_text,
+        "needs_reparse": needs_reparse,
+        "results": all_results,
+    }
 
 _HANDLER_SYSTEM_PROMPT = """You are an expert Windows security engineer and Python developer.
 Generate a Python event handler for the ForensiFlow EVTX forensics tool.

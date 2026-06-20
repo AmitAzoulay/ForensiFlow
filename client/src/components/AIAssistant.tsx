@@ -9,7 +9,6 @@ interface AIAssistantProps {
     onReparseComplete?: () => Promise<void>;
 }
 
-const HANDLER_INTENTS = new Set(['handler', 'list_handlers', 'remove_handler', 'handler_explain']);
 
 const renderMessageContent = (content: string) => {
     const parts = content.split(/(```(?:python)?\n[\s\S]*?```)/g);
@@ -75,38 +74,19 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                 [...handlerHistory, newUserMsg]
             );
 
-            const isHandlerIntent = HANDLER_INTENTS.has(data.intent);
             let aiContent: string;
 
-            if (data.intent === 'handler') {
-                if (data.summary) {
-                    aiContent = data.summary;
-                    const historyContent = data.reasoning
-                        ? `${data.summary}\n\nReasoning:\n${data.reasoning}`
-                        : data.summary;
-                    setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: historyContent }]);
-                    setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
-                    if (caseId && onReparseComplete) setPendingReparse(true);
-                    return;
-                } else {
-                    aiContent = data.error ?? 'Something went wrong generating the handler.';
-                    setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
-                }
-            } else if (data.intent === 'remove_handler') {
-                aiContent = data.reply ?? `Error: ${data.error}`;
+            if (data.intent === 'handler_agent') {
+                aiContent = data.summary ?? 'Done.';
                 setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
                 setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
-                if (caseId && onReparseComplete) setPendingReparse(true);
+                if (data.needs_reparse && caseId && onReparseComplete) setPendingReparse(true);
                 return;
-            } else if (isHandlerIntent) {
-                aiContent = data.reply ?? `Error: ${data.error}`;
-                setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
             } else {
                 aiContent = data.reply ?? `Error: ${data.error}`;
                 setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
+                setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
             }
-
-            setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
         } catch (error: any) {
             if (error?.response?.status === 429 || error?.message?.includes('429')) {
                 setMessages(prev => [...prev, { role: 'ai', content: 'AI is overloaded right now. Please wait 60 seconds and try again.' }]);
@@ -160,9 +140,9 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                 {messages.length === 0 && !isLoading && (
                     <div className="ai-placeholder">
                         <p><strong>Forensic analysis</strong> — ask about users, processes, lateral movement, or request a summary.</p>
-                        <p><strong>Add a handler</strong> — e.g. "add handler for event 4662 to detect DCSync attacks".</p>
-                        <p><strong>List handlers</strong> — "list handlers" to see all registered AI handlers.</p>
-                        <p><strong>Remove a handler</strong> — e.g. "remove the dcsync handler".</p>
+                        <p><strong>Add handlers</strong> — e.g. "add handlers for events 4624, 4625, and 4648 to track logon activity".</p>
+                        <p><strong>Remove handlers</strong> — e.g. "remove the dcsync handler and the account enabled handler".</p>
+                        <p><strong>List / explain</strong> — "list handlers" or "explain the logon handler".</p>
                     </div>
                 )}
 
