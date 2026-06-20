@@ -7,6 +7,7 @@ interface AIAssistantProps {
     caseId: string | null;
     externalPrompt?: { text: string; timestamp: number } | null;
     onReparseComplete?: () => Promise<void>;
+    onApplyAIQuery?: (query: string, label: string) => void;
 }
 
 
@@ -21,7 +22,7 @@ const renderMessageContent = (content: string) => {
     });
 };
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onReparseComplete }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onReparseComplete, onApplyAIQuery }) => {
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [handlerHistory, setHandlerHistory] = useState<ChatMessage[]>([]);
@@ -82,6 +83,16 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                 setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
                 if (data.needs_reparse && caseId && onReparseComplete) setPendingReparse(true);
                 return;
+            } else if (data.intent === 'query_agent') {
+                if (data.query) {
+                    aiContent = `Applied filter "${data.label}":\n\`${data.query}\``;
+                    if (onApplyAIQuery) onApplyAIQuery(data.query, data.label);
+                } else {
+                    aiContent = "I couldn't generate a filter query for that request.";
+                }
+                setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
+                setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
+                return;
             } else {
                 aiContent = data.reply ?? `Error: ${data.error}`;
                 setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
@@ -140,6 +151,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                 {messages.length === 0 && !isLoading && (
                     <div className="ai-placeholder">
                         <p><strong>Forensic analysis</strong> — ask about users, processes, lateral movement, or request a summary.</p>
+                        <p><strong>Graph queries</strong> — e.g. "show me all failed logons" or "find processes created by admin".</p>
                         <p><strong>Add handlers</strong> — e.g. "add handlers for events 4624, 4625, and 4648 to track logon activity".</p>
                         <p><strong>Remove handlers</strong> — e.g. "remove the dcsync handler and the account enabled handler".</p>
                         <p><strong>List / explain</strong> — "list handlers" or "explain the logon handler".</p>

@@ -7,16 +7,40 @@ logger = logging.getLogger(__name__)
 
 _INTENT_SYSTEM_PROMPT = """You are an intent classifier for ForensiFlow, a Windows EVTX forensics tool.
 
-Classify the user message as either "handler_agent" or "forensic". Respond with JSON only — no explanation, no markdown, no code fences.
+Classify the user message as one of three intents. Respond with JSON only — no explanation, no markdown.
 
-- "handler_agent": user wants to add, create, generate, remove, list, or explain event handlers
-- "forensic": user wants to analyze, investigate, summarize, or ask questions about the current case data
+INTENTS:
+- "handler_agent": user wants to manage event handlers (add, remove, list, explain)
+- "query_agent": user wants to CHANGE WHAT IS VISIBLE IN THE GRAPH — filter nodes/edges, highlight specific events, search for a specific user/process/action. The result is a visual change to the graph, not a text answer.
+- "forensic": user wants a TEXT ANSWER from the AI — analysis, explanation, summary, investigation insights, answers to "why", "what happened", "is this suspicious", etc.
 
-CRITICAL RULE: Any message containing "add a handler", "create a handler", "generate a handler", "make a handler", "build a handler", "write a handler", "add handler", "remove handler", "list handlers", "remove the", or "delete handler" is ALWAYS "handler_agent".
+THE KEY DISTINCTION:
+- If the user's request is best served by filtering the graph to show them something → "query_agent"
+- If the user's request is best served by the AI writing a text response → "forensic"
 
-Response format:
+EXAMPLES of "query_agent" (result = graph filter applied):
+  "show me all failed logons"
+  "find all enabled accounts"
+  "filter for remote access events"
+  "search for processes created by admin"
+  "give me all network connections"
+  "highlight logons from IP 10.0.0.1"
+  "list all process creation events"
+  "find lateral movement events"
+
+EXAMPLES of "forensic" (result = AI writes a text response):
+  "what happened in this investigation?"
+  "explain the attack"
+  "why did this logon fail?"
+  "summarize the lateral movement"
+  "is this user suspicious?"
+  "what should I look for next?"
+
+CRITICAL RULE: Any message with "add a handler", "create a handler", "generate a handler", "make a handler", "build a handler", "write a handler", "add handler", "remove handler", "list handlers", "remove the", or "delete handler" is ALWAYS "handler_agent".
+
+Response format (pick exactly one):
 {"intent": "handler_agent"}
-or
+{"intent": "query_agent"}
 {"intent": "forensic"}"""
 
 
@@ -50,6 +74,77 @@ def classify_intent(message: str, handler_history: list | None = None) -> dict:
     except json.JSONDecodeError:
         logger.warning(f"Intent classifier returned non-JSON: {raw!r} — falling back to forensic")
         return {"intent": "forensic"}
+
+
+_QUERY_AGENT_SYSTEM_PROMPT = """You are a query generator for ForensiFlow, a Windows EVTX forensics tool.
+
+The user wants to filter the investigation graph. Generate a query string in the ForensiFlow search language.
+
+QUERY SYNTAX:
+  RELATION_TYPE                     — all edges of this type (e.g. FAILED_LOGON)
+  RELATION_TYPE.src==name           — source node name contains "name" (case-insensitive, partial)
+  RELATION_TYPE.dst==name           — target node name contains "name" (case-insensitive, partial)
+  RELATION_TYPE.FieldName==value    — detail field contains "value" (case-insensitive, partial)
+  *.FieldName==value                — any relation type, match on field
+  A AND B  /  A OR B  /  NOT A      — boolean operators
+  (...)                             — grouping
+
+Common Windows event field names:
+  SubjectUserName, TargetUserName    — who performed / who was affected
+  SubjectDomainName, TargetDomainName
+  LogonType                          — 2=Interactive 3=Network 10=RemoteInteractive
+  IpAddress, IpPort                  — source IP for network logons
+  ProcessName, NewProcessName        — executable path
+  CommandLine                        — full command line
+  Status, SubStatus                  — NTSTATUS failure codes (shown with human-readable prefix)
+  ObjectName                         — file or registry path
+
+Respond with JSON only — no explanation, no markdown:
+{"query": "FAILED_LOGON", "label": "Failed Logons"}
+
+"query" = the search string. "label" = a 2-4 word human-readable name for the saved tab.
+If you cannot produce a meaningful query, return: {"query": "", "label": ""}
+"""
+
+
+def run_query_agent(message: str, handler_history: list, available_relations: list) -> dict:
+    """
+    Translates a natural-language filter request into a ForensiFlow search query string.
+    Returns {"query": str, "label": str}.
+    """
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is not set")
+
+    relations_text = "\n".join(f"  - {r}" for r in sorted(available_relations))
+    system = _QUERY_AGENT_SYSTEM_PROMPT + f"\nAVAILABLE RELATION TYPES:\n{relations_text}"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}"
+
+    contents = []
+    for msg in (handler_history or [])[-6:]:
+        role = "model" if msg.get("role") == "ai" else "user"
+        contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
+    contents.append({"role": "user", "parts": [{"text": message}]})
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"},
+    }
+
+    response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
+    response.raise_for_status()
+
+    raw = response.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
+    try:
+        data = json.loads(raw)
+        return {"query": str(data.get("query", "")), "label": str(data.get("label", "AI Query"))}
+    except json.JSONDecodeError:
+        logger.warning(f"Query agent returned non-JSON: {raw!r}")
+        return {"query": "", "label": ""}
 
 
 _HANDLER_TOOLS = [

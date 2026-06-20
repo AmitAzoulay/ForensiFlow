@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 from database import Neo4jClient
 from services.ai_agent import (
-    classify_intent, run_handler_agent,
+    classify_intent, run_handler_agent, run_query_agent,
     generate_forensic_response, generate_report_narrative,
     generate_event_handler, translate_single_log, generate_log_translation
 )
@@ -438,6 +438,27 @@ def _exec_explain_handler(name_query: str) -> dict:
     return {"status": "ok", "message": reasoning}
 
 
+_BUILTIN_RELATIONS = [
+    "ADDED_TO_GROUP", "AUDIT_LOG_CLEARED", "EXPLICIT_CREDS_USED",
+    "FAILED_LOGON", "LOGGED_IN", "MODIFIED_GROUP", "NETWORK_CONNECTION",
+    "OBJECT_ACCESSED_APPEND", "OBJECT_ACCESSED_DELETE", "OBJECT_ACCESSED_EXECUTE",
+    "OBJECT_ACCESSED_READ", "OBJECT_ACCESSED_WRITE", "PRIV_LOGON",
+    "PROCESS_CREATED", "REMOTE_ACCESS", "REQUESTED_HANDLE",
+    "SERVICE_INSTALLED", "TASK_CREATED", "TICKET_REQUESTED",
+    "TOKEN_ASSIGNED", "USED_IP_FOR_TICKET", "USER_CREATED", "USER_DELETED",
+]
+
+
+def _get_available_relations() -> list:
+    relations = list(_BUILTIN_RELATIONS)
+    handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+    for f in sorted(handler_dir.glob('event_*_*.py')):
+        for _, _, rel_type in _REL_RE.findall(f.read_text()):
+            if rel_type not in relations:
+                relations.append(rel_type)
+    return relations
+
+
 def _tool_executor(name: str, args: dict) -> dict:
     if name == "add_handler":
         return _exec_add_handler(args.get("event_id"), args.get("description", ""), args.get("name", ""))
@@ -487,6 +508,19 @@ def unified_chat():
                 "needs_reparse": False,
                 "results": [],
             }), 200
+
+    elif intent == 'query_agent':
+        try:
+            relations = _get_available_relations()
+            result = run_query_agent(last_message, handler_history, relations)
+            return jsonify({
+                "intent": "query_agent",
+                "query": result["query"],
+                "label": result["label"],
+            }), 200
+        except Exception as e:
+            logger.error(f"Query agent failed: {e}")
+            return jsonify({"intent": "query_agent", "query": "", "label": ""}), 200
 
     else:  # forensic
         if not case_id:

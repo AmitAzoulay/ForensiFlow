@@ -271,6 +271,13 @@ function App() {
     });
   };
 
+  const handleApplyAIQuery = (query: string, label: string) => {
+    if (!query.trim()) return;
+    const id = Date.now().toString();
+    setSavedQueries(prev => [...prev, { id, query: query.trim(), label }]);
+    setActiveSavedQueryIds(prev => [...prev, id]);
+  };
+
   const handleReparseComplete = async () => {
     if (!caseId) return;
     const data = await apiService.getGraphData(caseId);
@@ -778,6 +785,7 @@ function App() {
         caseId={caseId}
         externalPrompt={externalAIPrompt}
         onReparseComplete={handleReparseComplete}
+        onApplyAIQuery={handleApplyAIQuery}
       />
     </>
   );
