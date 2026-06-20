@@ -202,7 +202,10 @@ def _interpret_details(data_map: dict) -> dict:
 def _process_event_logic(tx, case_id, log, sid_map, proc_map):
     handler = EVENT_HANDLERS.get(log['event_id'])
     if handler:
-        handler(tx, case_id, log, sid_map, proc_map)
+        try:
+            handler(tx, case_id, log, sid_map, proc_map)
+        except Exception as e:
+            logger.error(f"Handler failed for event {log['event_id']}: {e}")
 
 
 def parse_and_store_evtx(filepath, case_id, case_name, db_client):

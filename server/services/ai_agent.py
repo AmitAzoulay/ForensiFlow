@@ -21,9 +21,9 @@ CRITICAL RULE: If the message contains any of the phrases "add a handler", "crea
 For "handler" intent:
 - Extract the Windows Event ID if the user stated one explicitly (4-5 digits); otherwise leave event_id as null and let the handler generator pick the right event.
 - Write a full description of what the handler should detect.
-- Choose a short snake_case name for the handler (2-4 words, lowercase, alphanumeric + underscores only, no leading/trailing underscores).
+- Choose a short snake_case name (2-4 words) derived from the relationships the handler will establish — NOT from the user's phrasing. For example, if the handler creates a ACCOUNT_ENABLED edge, name it "user_account_enabled". Do NOT include "event", "handler", "add", "create", the event ID number, or any filler words.
 
-For "remove_handler" intent, extract the name or description the user gave to identify the handler.
+For "remove_handler" intent, look at the conversation history to resolve what handler the user is referring to. If they say "the last one", "that handler", "the one I just created", "the previous handler", etc., find the actual handler name or event ID from the recent history and use that. Extract only the shortest unique identifying keyword — a behaviour name, event ID, or file stem fragment. Never use generic phrases like "previously created" or "the last one" as the name.
 
 Response format for handler with explicit event ID:
 {"intent": "handler", "event_id": "4688", "description": "detect suspicious process creation", "name": "suspicious_process_creation"}
