@@ -76,6 +76,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                         setIsLoading(true);
                         try {
                             await apiService.reparseCase(caseId);
+                            await new Promise(resolve => setTimeout(resolve, 800));
                             await onReparseComplete();
                         } catch {
                             setMessages(prev => [...prev, { role: 'ai', content: 'Reparse failed. Check the server logs.' }]);
