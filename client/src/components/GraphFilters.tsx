@@ -40,6 +40,36 @@ function getTokenAtEnd(query: string): { token: string; start: number } {
 }
 
 function computeSuggestions(token: string, links: any[], hasContentBefore: boolean): Suggestion[] {
+    // Phase 3: identifier.field==value_prefix  →  suggest actual values
+    const valueMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+|\*)\.([a-zA-Z0-9_]+)==(.*)$/i);
+    if (valueMatch) {
+        const [, id, field, valuePrefix] = valueMatch;
+        const isNumeric = /^\d+$/.test(id);
+        const matchingLinks = links.filter(l =>
+            id === '*'
+                ? true
+                : isNumeric
+                    ? (l.details?.event_id?.toString() === id || l.details?.EventID?.toString() === id)
+                    : (l.type || '').toLowerCase() === id.toLowerCase()
+        );
+
+        const rawValues = [...new Set(
+            matchingLinks
+                .map((l: any) => l.details?.[field]?.toString())
+                .filter(Boolean)
+        )] as string[];
+
+        const prefixLower = valuePrefix.toLowerCase();
+        return rawValues
+            .filter(v => v.toLowerCase().includes(prefixLower))
+            .slice(0, 8)
+            .map(v => ({
+                label: v,
+                badge: 'value',
+                completion: `${id}.${field}=="${v}"`,
+            }));
+    }
+
     // Phase 2: identifier.field_prefix
     const fieldMatch = token.match(/^([a-zA-Z][a-zA-Z0-9_]*|\d+)\.([a-zA-Z0-9_]*)$/);
     if (fieldMatch) {

@@ -440,7 +440,7 @@ function App() {
           matchResult = name.includes(targetValue);
         } else if (identifierMatches && (targetField in details)) {
           const actualValue = details[targetField]?.toString().toLowerCase() || "";
-          matchResult = actualValue.includes(targetValue) || actualValue === targetValue;
+          matchResult = actualValue.includes(targetValue);
         } else {
           matchResult = false;
         }
