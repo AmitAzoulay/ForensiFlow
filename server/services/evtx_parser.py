@@ -24,6 +24,22 @@ _WINDOWS_CODE_MAP = {
     # Boolean flags: VirtualAccount, ElevatedToken, RestrictedAdminMode
     '%%1842': 'Yes',
     '%%1843': 'No',
+    # Standard access rights (AccessList field — events 4663, 4656, 4670)
+    '%%1537': 'Delete',
+    '%%1538': 'Read Control',
+    '%%1539': 'Write DAC',
+    '%%1540': 'Write Owner',
+    '%%1541': 'Synchronize',
+    '%%1542': 'Access System Security',
+    # Object-specific access rights (AccessList field — events 4663, 4656)
+    '%%4416': 'Read Data / List Directory',
+    '%%4417': 'Write Data / Add File',
+    '%%4418': 'Append Data / Add Subdirectory',
+    '%%4419': 'Read Extended Attributes',
+    '%%4420': 'Write Extended Attributes',
+    '%%4421': 'Execute / Traverse',
+    '%%4423': 'Read Attributes',
+    '%%4424': 'Write Attributes',
     # OperationType (event 4657 — registry)
     '%%1904': 'New value created',
     '%%1905': 'Value modified',
@@ -45,6 +61,36 @@ _WINDOWS_CODE_MAP = {
     # Event keywords
     '%%8272': 'Audit Success',
     '%%8273': 'Audit Failure',
+}
+
+_KERBEROS_STATUS_MAP = {
+    '0x0':  'Success',
+    '0x1':  'Client not found in Kerberos database',
+    '0x2':  'Server not found in Kerberos database',
+    '0x6':  'Bad network address / client not found',
+    '0x7':  'Protocol version mismatch',
+    '0x8':  'Integrity check failed',
+    '0xc':  'KDC policy rejection',
+    '0xd':  'Bad Kerberos option',
+    '0x12': 'Credentials revoked / account disabled',
+    '0x17': 'Password expired',
+    '0x18': 'Pre-authentication failed (wrong password)',
+    '0x19': 'Pre-authentication required',
+    '0x1a': 'Server principal not valid yet',
+    '0x24': 'Certificate mismatch',
+    '0x25': 'Integrity check failed on AP response',
+    '0x29': 'Request is a replay',
+    '0x2c': 'Bad key version number',
+    '0x2d': 'Service key expired',
+    '0x32': 'Kerberos application error',
+}
+
+_PRE_AUTH_TYPE_MAP = {
+    '0':  'No Pre-Authentication',
+    '2':  'Password (RC4/NTLM)',
+    '15': 'PKINIT (Certificate)',
+    '17': 'Hardware Token (Smartcard)',
+    '18': 'PKINIT (MS Extension)',
 }
 
 _NTSTATUS_MAP = {
@@ -91,8 +137,10 @@ _PROTOCOL_MAP = {
 _FIELD_MAPS = {
     'Status':               _NTSTATUS_MAP,
     'SubStatus':            _NTSTATUS_MAP,
+    'FailureCode':          _KERBEROS_STATUS_MAP,
     'TicketEncryptionType': _ENCRYPTION_TYPE_MAP,
     'Protocol':             _PROTOCOL_MAP,
+    'PreAuthType':          _PRE_AUTH_TYPE_MAP,
 }
 
 _CODE_RE = re.compile(r'%%\d+')
