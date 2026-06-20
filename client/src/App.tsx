@@ -3,6 +3,7 @@ import GraphPanel from './components/GraphPanel';
 import LogPanel from './components/LogPanel';
 import AIAssistant from './components/AIAssistant';
 import GraphFilters from './components/GraphFilters';
+import { apiService } from './services/api';
 import ExecutionLineage from './components/ExecutionLineage';
 import './App.css';
 
@@ -240,6 +241,12 @@ function App() {
 
       return newEdits;
     });
+  };
+
+  const handleReparseComplete = async () => {
+    if (!caseId) return;
+    const data = await apiService.getGraphData(caseId);
+    handleDataLoaded(data, caseId);
   };
 
   const handleSaveEdited = async (newName: string) => {
@@ -742,6 +749,7 @@ function App() {
       <AIAssistant
         caseId={caseId}
         externalPrompt={externalAIPrompt}
+        onReparseComplete={handleReparseComplete}
       />
     </>
   );

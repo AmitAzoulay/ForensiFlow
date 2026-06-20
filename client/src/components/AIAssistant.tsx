@@ -6,11 +6,27 @@ import './AIAssistant.css';
 interface AIAssistantProps {
     caseId: string | null;
     externalPrompt?: { text: string; timestamp: number } | null;
+    onReparseComplete?: () => Promise<void>;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => {
+const HANDLER_INTENTS = new Set(['handler', 'list_handlers', 'remove_handler', 'handler_explain']);
+
+const renderMessageContent = (content: string) => {
+    const parts = content.split(/(```(?:python)?\n[\s\S]*?```)/g);
+    return parts.map((part, i) => {
+        const codeMatch = part.match(/```(?:python)?\n([\s\S]*?)```/);
+        if (codeMatch) {
+            return <pre key={i} className="ai-code-block">{codeMatch[1].trimEnd()}</pre>;
+        }
+        return <span key={i}>{part}</span>;
+    });
+};
+
+const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onReparseComplete }) => {
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [handlerHistory, setHandlerHistory] = useState<ChatMessage[]>([]);
+    const [forensicHistory, setForensicHistory] = useState<ChatMessage[]>([]);
     const [inputValue, setInputValue] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -22,16 +38,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
     }, [messages]);
 
     useEffect(() => {
-        setMessages([]);
-    }, [caseId]);
-
-    useEffect(() => {
-        if (isOpen && messages.length === 0 && caseId) {
-            handleSendMessage("Provide a single-paragraph forensic summary of this investigation.");
-        }
-    }, [isOpen, caseId, messages.length]);
-
-    useEffect(() => {
         if (externalPrompt && externalPrompt.text && caseId) {
             setIsOpen(true);
             handleSendMessage(externalPrompt.text);
@@ -40,23 +46,62 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
 
     const handleSendMessage = async (textOverride?: string) => {
         const textToProcess = textOverride || inputValue;
-        if (!textToProcess.trim() || !caseId) return;
+        if (!textToProcess.trim()) return;
 
         const newUserMsg: ChatMessage = { role: 'user', content: textToProcess };
-        const updatedMessages = [...messages, newUserMsg];
-
-        setMessages(updatedMessages);
+        setMessages(prev => [...prev, newUserMsg]);
         setInputValue('');
         setIsLoading(true);
 
         try {
-            const data = await apiService.sendChatMessage(caseId, updatedMessages);
-            if (data.reply) {
-                setMessages(prev => [...prev, { role: 'ai', content: data.reply }]);
+            const data = await apiService.chat(
+                caseId,
+                [...forensicHistory, newUserMsg],
+                [...handlerHistory, newUserMsg]
+            );
+
+            const isHandlerIntent = HANDLER_INTENTS.has(data.intent);
+            let aiContent: string;
+
+            if (data.intent === 'handler') {
+                if (data.summary) {
+                    aiContent = data.summary;
+                    // Store reasoning in handler history so follow-up questions can reference it,
+                    // but only show the summary in the visible chat.
+                    const historyContent = data.reasoning
+                        ? `${data.summary}\n\nReasoning:\n${data.reasoning}`
+                        : data.summary;
+                    setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: historyContent }]);
+                    setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
+
+                    if (caseId && onReparseComplete) {
+                        setIsLoading(true);
+                        try {
+                            await apiService.reparseCase(caseId);
+                            await onReparseComplete();
+                        } catch {
+                            setMessages(prev => [...prev, { role: 'ai', content: 'Reparse failed. Check the server logs.' }]);
+                        } finally {
+                            setIsLoading(false);
+                        }
+                    }
+                    return;
+                } else {
+                    aiContent = data.error ?? 'Something went wrong generating the handler.';
+                    setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
+                }
+            } else if (isHandlerIntent) {
+                // list_handlers or remove_handler
+                aiContent = data.reply ?? `Error: ${data.error}`;
+                setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
             } else {
-                setMessages(prev => [...prev, { role: 'ai', content: `Error: ${data.error}` }]);
+                // forensic
+                aiContent = data.reply ?? `Error: ${data.error}`;
+                setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
             }
-        } catch (error) {
+
+            setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
+        } catch {
             setMessages(prev => [...prev, { role: 'ai', content: 'Error connecting to ForensiFlow AI server.' }]);
         } finally {
             setIsLoading(false);
@@ -104,26 +149,26 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
             <div className="ai-chat-area">
                 {messages.length === 0 && !isLoading && (
                     <div className="ai-placeholder">
-                        I have access to the chronological graph logs. Ask me to investigate specific users, processes, or create a summary.
+                        <p><strong>Forensic analysis</strong> — ask about users, processes, lateral movement, or request a summary.</p>
+                        <p><strong>Add a handler</strong> — e.g. "add handler for event 4662 to detect DCSync attacks".</p>
+                        <p><strong>List handlers</strong> — "list handlers" to see all registered AI handlers.</p>
+                        <p><strong>Remove a handler</strong> — e.g. "remove the dcsync handler".</p>
                     </div>
                 )}
 
                 {messages.map((msg, idx) => {
-                    if (idx === 0 && msg.content.includes("single-paragraph forensic summary")) return null;
-
                     let displayContent = msg.content;
                     if (msg.role === 'user' && msg.content.includes("TACTICAL ANALYSIS REQUIRED:")) {
-                        displayContent = "🔍 Analyzing selected item..."; 
+                        displayContent = "🔍 Analyzing selected item...";
                     }
-
                     return (
                         <div key={idx} className={`ai-message ${msg.role}`}>
-                            {displayContent}
+                            {renderMessageContent(displayContent)}
                         </div>
                     );
                 })}
 
-                {isLoading && <div className="ai-loading">Analyzing...</div>}
+                {isLoading && <div className="ai-loading">Thinking...</div>}
                 <div ref={messagesEndRef} />
             </div>
 
@@ -133,13 +178,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt }) => 
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder={caseId ? "Ask about the investigation..." : "Load a case first"}
-                    disabled={!caseId || isLoading}
+                    placeholder=""
+                    disabled={isLoading}
                     className="ai-input"
                 />
                 <button
                     onClick={() => handleSendMessage()}
-                    disabled={!inputValue.trim() || !caseId || isLoading}
+                    disabled={!inputValue.trim() || isLoading}
                     className="ai-send-btn"
                 >
                     Send

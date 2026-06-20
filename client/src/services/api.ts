@@ -49,5 +49,31 @@ export const apiService = {
         });
         if (!response.ok) throw new Error('Failed to delete investigation');
         return response.json();
+    },
+
+    reparseCase: async (caseId: string) => {
+        const response = await fetch(`${API_BASE_URL}/reparse/${caseId}`, { method: 'POST' });
+        if (!response.ok) throw new Error('Reparse failed');
+        return response.json();
+    },
+
+    chat: async (caseId: string | null, forensicHistory: ChatMessage[], handlerHistory: ChatMessage[]) => {
+        const response = await fetch(`${API_BASE_URL}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ case_id: caseId, history: forensicHistory, handler_history: handlerHistory })
+        });
+        if (!response.ok) throw new Error('Failed to communicate with AI service');
+        return response.json();
+    },
+
+    generateHandler: async (eventId: string, description: string) => {
+        const response = await fetch(`${API_BASE_URL}/generate-handler`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event_id: eventId, description })
+        });
+        if (!response.ok) throw new Error('Failed to generate handler');
+        return response.json();
     }
 };

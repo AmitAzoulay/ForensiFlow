@@ -100,6 +100,16 @@ class Neo4jClient:
             logger.error(f"Database error during get_investigation_timeline: {e}")
             raise
 
+    def get_investigation_name(self, case_id):
+        query = "MATCH (i:Investigation {case_id: $case_id}) RETURN i.name AS name LIMIT 1"
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, case_id=case_id).single()
+                return result['name'] if result else 'Investigation'
+        except Exception as e:
+            logger.error(f"Database error during get_investigation_name: {e}")
+            return 'Investigation'
+
     def delete_investigation(self, case_id):
         query = """
         MATCH (n {case_id: $case_id})

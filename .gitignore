@@ -10,6 +10,9 @@ env/
 # Project specific uploads
 uploads/
 
+# AI-generated event handlers (created at runtime, not source-controlled)
+server/services/handlers/ai_generated/event_*_*.py
+
 # Python bytecode and caches (הקבצים שהופיעו לך מקודם)
 __pycache__/
 *.pyc
