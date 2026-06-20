@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 
 from database import Neo4jClient
 from services.ai_agent import (
-    classify_intent, generate_forensic_response, generate_report_narrative,
+    classify_intent, run_handler_agent, run_query_agent,
+    generate_forensic_response, generate_report_narrative,
     generate_event_handler, translate_single_log, generate_log_translation
 )
 from services.handlers import deregister_handler
@@ -341,18 +342,145 @@ def process_ai_chat():
         if "429" in str(e) or "RATE_LIMIT" in str(e) or "quota" in str(e).lower():
              return jsonify({"reply": "AI quota has been reached. Please wait a minute and try again."}), 429
         return jsonify({"error": "Failed to process AI request"}), 500
-    
+
+
+def _exec_add_handler(event_id: str | None, description: str, name: str) -> dict:
+    event_id = str(event_id or '').strip() or None
+    if event_id and not event_id.isdigit():
+        event_id = None
+    safe_name = re.sub(r'[^a-z0-9_]', '', str(name or '').lower().replace('-', '_').replace(' ', '_'))
+    safe_name = re.sub(r'_+', '_', safe_name).strip('_')
+    try:
+        code = generate_event_handler(event_id, description)
+        code = re.sub(r'^```(?:python)?\s*\n?', '', code, flags=re.MULTILINE)
+        code = re.sub(r'^```\s*$', '', code, flags=re.MULTILINE).strip()
+        try:
+            ast.parse(code)
+        except SyntaxError:
+            if 'register_handler' not in code and 'def ' not in code:
+                return {"status": "error", "message": code}
+            raise
+        detected_id = _validate_handler_ast(code, event_id)
+        if not safe_name:
+            safe_name = f'handler_{detected_id}'
+        file_stem = f'event_{detected_id}_{safe_name}'
+        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+        handler_dir.mkdir(exist_ok=True)
+        (handler_dir / f'{file_stem}.py').write_text(code)
+        module_name = f'services.handlers.ai_generated.{file_stem}'
+        if module_name in sys.modules:
+            importlib.reload(sys.modules[module_name])
+        else:
+            importlib.import_module(module_name)
+        summary = _summarize_handler(code, detected_id)
+        reasoning = _extract_reasoning(code)
+        return {"status": "ok", "event_id": detected_id, "stem": file_stem, "summary": summary, "reasoning": reasoning}
+    except (SyntaxError, ValueError) as e:
+        logger.error(f"Handler validation failed: {e}")
+        return {"status": "error", "message": f"Validation failed: {e}"}
+    except Exception as e:
+        logger.error(f"Handler generation failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def _exec_remove_handler(name_query: str) -> dict:
+    name_query = (name_query or '').lower().strip()
+    handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+    files = sorted(handler_dir.glob('event_*_*.py'))
+    if not name_query:
+        return {"status": "error", "message": "Please specify which handler to remove."}
+    matches = [f for f in files if name_query in f.stem.lower()]
+    if not matches:
+        return {"status": "error", "message": f"No handler found matching '{name_query}'."}
+    if len(matches) > 1:
+        names = ", ".join(f.stem for f in matches)
+        return {"status": "error", "message": f"Multiple matches: {names}. Be more specific."}
+    target = matches[0]
+    module_name = f'services.handlers.ai_generated.{target.stem}'
+    deregister_handler(module_name)
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    target.unlink()
+    logger.info(f"Removed handler: {target.stem}")
+    return {"status": "ok", "message": f"Handler '{target.stem}' removed."}
+
+
+def _exec_list_handlers() -> dict:
+    handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+    files = sorted(handler_dir.glob('event_*_*.py'))
+    if not files:
+        return {"status": "ok", "message": "No AI-generated handlers are currently registered."}
+    lines = ["Registered AI-generated handlers:"]
+    for f in files:
+        parts = f.stem.split('_', 2)
+        event_id_part = parts[1] if len(parts) > 1 else '?'
+        name_part = parts[2].replace('_', ' ') if len(parts) > 2 else f.stem
+        lines.append(f"  • Event {event_id_part}: {name_part}  [{f.stem}]")
+    return {"status": "ok", "message": "\n".join(lines)}
+
+
+def _exec_explain_handler(name_query: str) -> dict:
+    name_query = (name_query or '').lower().strip()
+    handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+    files = sorted(handler_dir.glob('event_*_*.py'))
+    if not name_query:
+        return {"status": "error", "message": "Which handler would you like explained?"}
+    matches = [f for f in files if name_query in f.stem.lower()]
+    if not matches:
+        return {"status": "error", "message": f"No handler found matching '{name_query}'."}
+    if len(matches) > 1:
+        names = ", ".join(f.stem for f in matches)
+        return {"status": "error", "message": f"Multiple matches: {names}. Be more specific."}
+    code = matches[0].read_text()
+    reasoning = _extract_reasoning(code)
+    if not reasoning:
+        return {"status": "error", "message": f"No reasoning comment in '{matches[0].stem}'."}
+    return {"status": "ok", "message": reasoning}
+
+
+_BUILTIN_RELATIONS = [
+    "ADDED_TO_GROUP", "AUDIT_LOG_CLEARED", "EXPLICIT_CREDS_USED",
+    "FAILED_LOGON", "LOGGED_IN", "MODIFIED_GROUP", "NETWORK_CONNECTION",
+    "OBJECT_ACCESSED_APPEND", "OBJECT_ACCESSED_DELETE", "OBJECT_ACCESSED_EXECUTE",
+    "OBJECT_ACCESSED_READ", "OBJECT_ACCESSED_WRITE", "PRIV_LOGON",
+    "PROCESS_CREATED", "REMOTE_ACCESS", "REQUESTED_HANDLE",
+    "SERVICE_INSTALLED", "TASK_CREATED", "TICKET_REQUESTED",
+    "TOKEN_ASSIGNED", "USED_IP_FOR_TICKET", "USER_CREATED", "USER_DELETED",
+]
+
+
+def _get_available_relations() -> list:
+    relations = list(_BUILTIN_RELATIONS)
+    handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
+    for f in sorted(handler_dir.glob('event_*_*.py')):
+        for _, _, rel_type in _REL_RE.findall(f.read_text()):
+            if rel_type not in relations:
+                relations.append(rel_type)
+    return relations
+
+
+def _tool_executor(name: str, args: dict) -> dict:
+    if name == "add_handler":
+        return _exec_add_handler(args.get("event_id"), args.get("description", ""), args.get("name", ""))
+    if name == "remove_handler":
+        return _exec_remove_handler(args.get("name", ""))
+    if name == "list_handlers":
+        return _exec_list_handlers()
+    if name == "explain_handler":
+        return _exec_explain_handler(args.get("name", ""))
+    return {"status": "error", "message": f"Unknown tool: {name}"}
+
+
 @app.route('/api/chat', methods=['POST'])
 def unified_chat():
     data = request.json
     case_id = data.get('case_id')
-    history = data.get('history', [])                  # forensic context only
-    handler_history = data.get('handler_history', [])  # handler management context only
+    history = data.get('history', [])
+    handler_history = data.get('handler_history', [])
 
     if not history and not handler_history:
         return jsonify({"error": "No message provided"}), 400
 
-    # Use whichever history has the last message
     last_message = (handler_history or history)[-1].get('content', '')
 
     try:
@@ -363,129 +491,46 @@ def unified_chat():
 
     intent = intent_data.get('intent', 'forensic')
 
-    if intent == 'handler':
-        event_id = (intent_data.get('event_id') or '').strip()
-        description = (intent_data.get('description') or '').strip()
-
-        # event_id may be None if the user didn't specify one — the AI will pick it
-        if event_id and not event_id.isdigit():
-            event_id = None
-
-        raw_name = intent_data.get('name', '')
-        safe_name = re.sub(r'[^a-z0-9_]', '', raw_name.lower().replace('-', '_').replace(' ', '_'))
-        safe_name = re.sub(r'_+', '_', safe_name).strip('_')
-
+    if intent == 'handler_agent':
         try:
-            code = generate_event_handler(event_id, description)
-            code = re.sub(r'^```(?:python)?\s*\n?', '', code, flags=re.MULTILINE)
-            code = re.sub(r'^```\s*$', '', code, flags=re.MULTILINE).strip()
-
-            try:
-                ast.parse(code)
-            except SyntaxError:
-                # If it doesn't look like Python code, the AI wrote a natural decline message
-                if 'register_handler' not in code and 'def ' not in code:
-                    return jsonify({"intent": "handler", "error": code}), 200
-                raise
-
-            event_id = _validate_handler_ast(code, event_id)  # returns the actual event ID
-
-            if not safe_name:
-                safe_name = f'handler_{event_id}'
-            file_stem = f'event_{event_id}_{safe_name}'
-
-            handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
-            handler_dir.mkdir(exist_ok=True)
-            (handler_dir / f'{file_stem}.py').write_text(code)
-
-            module_name = f'services.handlers.ai_generated.{file_stem}'
-            if module_name in sys.modules:
-                importlib.reload(sys.modules[module_name])
-            else:
-                importlib.import_module(module_name)
-
-            summary = _summarize_handler(code, event_id)
-            reasoning = _extract_reasoning(code)
-            return jsonify({"intent": "handler", "event_id": event_id, "summary": summary, "reasoning": reasoning}), 200
-
-        except (SyntaxError, ValueError) as e:
-            logger.error(f"Handler validation failed: {e}")
-            return jsonify({"intent": "handler", "error": f"Handler validation failed: {e}"}), 200
+            result = run_handler_agent(last_message, handler_history, _tool_executor)
+            return jsonify({
+                "intent": "handler_agent",
+                "summary": result["summary"],
+                "needs_reparse": result["needs_reparse"],
+                "results": result["results"],
+            }), 200
         except Exception as e:
-            logger.error(f"Handler generation failed: {e}")
-            return jsonify({"intent": "handler", "error": str(e)}), 200
+            logger.error(f"Handler agent failed: {e}")
+            return jsonify({
+                "intent": "handler_agent",
+                "summary": f"Error: {e}",
+                "needs_reparse": False,
+                "results": [],
+            }), 200
 
-    elif intent == 'list_handlers':
-        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
-        files = sorted(handler_dir.glob('event_*_*.py'))
-        if not files:
-            lines = ["No AI-generated handlers are currently registered."]
-        else:
-            lines = ["Registered AI-generated handlers:"]
-            for f in files:
-                parts = f.stem.split('_', 2)  # event, <id>, <name>
-                event_id_part = parts[1] if len(parts) > 1 else '?'
-                name_part = parts[2].replace('_', ' ') if len(parts) > 2 else f.stem
-                lines.append(f"  • Event {event_id_part}: {name_part}  [{f.stem}]")
-        return jsonify({"intent": "list_handlers", "reply": "\n".join(lines)}), 200
-
-    elif intent == 'remove_handler':
-        name_query = (intent_data.get('name') or '').lower().strip()
-        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
-        files = sorted(handler_dir.glob('event_*_*.py'))
-
-        if not name_query:
-            return jsonify({"intent": "remove_handler", "reply": "Please specify which handler to remove."}), 200
-
-        matches = [f for f in files if name_query in f.stem.lower()]
-        if not matches:
-            return jsonify({"intent": "remove_handler", "reply": f"No handler found matching '{name_query}'."}), 200
-        if len(matches) > 1:
-            names = "\n".join(f"  • {f.stem}" for f in matches)
-            return jsonify({"intent": "remove_handler", "reply": f"Multiple matches found:\n{names}\nBe more specific."}), 200
-
-        target = matches[0]
-        module_name = f'services.handlers.ai_generated.{target.stem}'
-        deregister_handler(module_name)
-        if module_name in sys.modules:
-            del sys.modules[module_name]
-        target.unlink()
-        logger.info(f"Removed handler: {target.stem}")
-        return jsonify({"intent": "remove_handler", "reply": f"Handler '{target.stem}' removed."}), 200
-
-    elif intent == 'handler_explain':
-        name_query = (intent_data.get('name') or '').lower().strip()
-        handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
-        files = sorted(handler_dir.glob('event_*_*.py'))
-
-        if not name_query:
-            return jsonify({"intent": "handler_explain", "reply": "Which handler would you like explained?"}), 200
-
-        matches = [f for f in files if name_query in f.stem.lower()]
-        if not matches:
-            return jsonify({"intent": "handler_explain", "reply": f"No handler found matching '{name_query}'."}), 200
-        if len(matches) > 1:
-            names = "\n".join(f"  • {f.stem}" for f in matches)
-            return jsonify({"intent": "handler_explain", "reply": f"Multiple matches:\n{names}\nBe more specific."}), 200
-
-        code = matches[0].read_text()
-        reasoning = _extract_reasoning(code)
-        if not reasoning:
-            return jsonify({"intent": "handler_explain", "reply": f"No reasoning comment found in '{matches[0].stem}'."}), 200
-        return jsonify({"intent": "handler_explain", "reply": reasoning}), 200
+    elif intent == 'query_agent':
+        try:
+            relations = _get_available_relations()
+            result = run_query_agent(last_message, handler_history, relations)
+            return jsonify({
+                "intent": "query_agent",
+                "query": result["query"],
+                "label": result["label"],
+            }), 200
+        except Exception as e:
+            logger.error(f"Query agent failed: {e}")
+            return jsonify({"intent": "query_agent", "query": "", "label": ""}), 200
 
     else:  # forensic
         if not case_id:
             return jsonify({"intent": "forensic", "reply": "Load a case first to analyze the investigation."}), 200
-
         try:
             timeline = db_client.get_investigation_timeline(case_id)
             if not timeline:
                 return jsonify({"intent": "forensic", "reply": "No data in the current graph to analyze. Load an EVTX file first."})
-
             reply = generate_forensic_response(timeline, history)
             return jsonify({"intent": "forensic", "reply": reply}), 200
-
         except Exception as e:
             logger.error(f"Forensic chat failed: {e}")
             return jsonify({"error": "Failed to process AI request"}), 500
@@ -699,5 +744,5 @@ def translate_log():
 
 if __name__ == '__main__':
     logger.info("ForensiFlow API Server starting on port 8000...")
-    app.run(debug=True, port=8000)
+    app.run(debug=True, port=8000, exclude_patterns=['*/ai_generated/*'])
 
