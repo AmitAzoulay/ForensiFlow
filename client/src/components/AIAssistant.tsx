@@ -88,6 +88,23 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                     aiContent = data.error ?? 'Something went wrong generating the handler.';
                     setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
                 }
+            } else if (data.intent === 'remove_handler') {
+                aiContent = data.reply ?? `Error: ${data.error}`;
+                setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
+                setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
+
+                if (caseId && onReparseComplete) {
+                    setIsLoading(true);
+                    try {
+                        await apiService.reparseCase(caseId);
+                        await onReparseComplete();
+                    } catch {
+                        setMessages(prev => [...prev, { role: 'ai', content: 'Reparse failed. Check the server logs.' }]);
+                    } finally {
+                        setIsLoading(false);
+                    }
+                }
+                return;
             } else if (isHandlerIntent) {
                 aiContent = data.reply ?? `Error: ${data.error}`;
                 setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
