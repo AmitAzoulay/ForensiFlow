@@ -73,6 +73,7 @@ function App() {
   const [rawGraphData, setRawGraphData] = useState({ nodes: [], links: [] });
   const [selectedLink, setSelectedLink] = useState<any>(null);
   const [caseId, setCaseId] = useState<string | null>(null);
+  const [notebookText, setNotebookText] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
@@ -129,6 +130,29 @@ function App() {
 
   const handleLinkClick = (link: any) => {
     setSelectedLink(link);
+  };
+
+  useEffect(() => {
+    if (!caseId) {
+      setNotebookText('');
+      return;
+    }
+
+    const storageKey = `forensiflow-notebook:${caseId}`;
+    const savedNotes = localStorage.getItem(storageKey) || '';
+    setNotebookText(savedNotes);
+  }, [caseId]);
+
+  const handleNotebookChange = (nextText: string) => {
+    setNotebookText(nextText);
+    if (!caseId) return;
+    localStorage.setItem(`forensiflow-notebook:${caseId}`, nextText);
+  };
+
+  const handleNotebookClear = () => {
+    setNotebookText('');
+    if (!caseId) return;
+    localStorage.removeItem(`forensiflow-notebook:${caseId}`);
   };
 
   const toggleFilter = (category: string) => {
@@ -323,7 +347,11 @@ function App() {
       const response = await fetch('http://localhost:8000/api/generate-forensic-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes: redNodes, links: redLinks })
+        body: JSON.stringify({
+          nodes: redNodes,
+          links: redLinks,
+          analyst_notes: notebookText
+        })
       });
 
       if (!response.ok) throw new Error("Failed to generate report from server");
@@ -757,6 +785,7 @@ function App() {
       <GraphPanel
         graphData={filteredGraphData}
         caseId={caseId}
+        notebookText={notebookText}
         refreshKey={refreshKey}
         isPlaybackMode={isPlaybackMode}
         activePlaybackNodeIds={activePlaybackNodeIds}
@@ -773,6 +802,8 @@ function App() {
         onSaveEdited={handleSaveEdited}
         onDownloadReport={handleDownloadReport}
         onIsolateLineage={(node) => setLineageTarget(node)}
+        onNotebookChange={handleNotebookChange}
+        onNotebookClear={handleNotebookClear}
       >
         <LogPanel
           selectedLink={selectedLink}

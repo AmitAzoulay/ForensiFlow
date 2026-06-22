@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
 import NodeContextMenu from './NodeContextMenu';
+import NotebookPopup from './NotebookPopup';
 import './GraphPanel.css';
 
 const GRAPH_SETTINGS = {
@@ -184,6 +185,7 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
 interface GraphPanelProps {
     graphData: { nodes: any[], links: any[] };
     caseId?: string | null;
+    notebookText?: string;
     refreshKey?: number;
     isPlaybackMode?: boolean;
     activePlaybackNodeIds?: Set<string>;
@@ -199,6 +201,8 @@ interface GraphPanelProps {
     onApplyEdit: (action: 'red' | 'unred' | 'delete', targetType: 'node' | 'link' | 'group', targetData: any) => void;
     onSaveEdited: (newName: string) => void;
     onIsolateLineage: (node: any) => void;
+    onNotebookChange?: (text: string) => void;
+    onNotebookClear?: () => void;
     children?: React.ReactNode;
     filtersComponent?: React.ReactNode;
 }
@@ -206,6 +210,7 @@ interface GraphPanelProps {
 const GraphPanel: React.FC<GraphPanelProps> = ({
     graphData,
     caseId,
+    notebookText = '',
     refreshKey = 0,
     isPlaybackMode = false,
     activePlaybackNodeIds,
@@ -221,6 +226,8 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     onApplyEdit,
     onSaveEdited,
     onIsolateLineage,
+    onNotebookChange,
+    onNotebookClear,
     children,
     filtersComponent
 }) => {
@@ -239,6 +246,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     const [isLasso, setIsLasso] = useState(false);
     const [lassoBox, setLassoBox] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
     const [showHelp, setShowHelp] = useState(false);
+    const [showNotebook, setShowNotebook] = useState(false);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const graphRef = useRef<any>(null);
@@ -599,6 +607,20 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
 
                     {caseId && (
                         <button
+                            onClick={() => setShowNotebook(true)}
+                            disabled={isPlaybackMode}
+                            style={{
+                                backgroundColor: 'white', color: '#0f172a', border: '1px solid #cbd5e1',
+                                padding: '8px 16px', borderRadius: '6px', fontWeight: 600, cursor: isPlaybackMode ? 'default' : 'pointer',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: '36px', opacity: isPlaybackMode ? 0.6 : 1
+                            }}
+                        >
+                            Notebook
+                        </button>
+                    )}
+
+                    {caseId && (
+                        <button
                             onClick={triggerSave}
                             disabled={isPlaybackMode}
                             style={{
@@ -915,6 +937,15 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                 </div>
                 {children}
             </div>
+
+            <NotebookPopup
+                isOpen={showNotebook}
+                caseId={caseId || null}
+                notebookText={notebookText}
+                onNotebookChange={(text) => onNotebookChange?.(text)}
+                onClearNotes={() => onNotebookClear?.()}
+                onClose={() => setShowNotebook(false)}
+            />
         </div>
     );
 };
