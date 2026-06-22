@@ -624,6 +624,7 @@ def generate_forensic_report():
         data = request.json
         red_nodes = data.get('nodes', [])
         red_links = data.get('links', [])
+        analyst_notes = (data.get('analyst_notes') or '').strip()
 
         node_map = {}
         for n in red_nodes:
@@ -688,9 +689,18 @@ def generate_forensic_report():
             worksheet_summary.write('A2', f"Generated on: {generation_time} | Flagged Events: {len(evidence_list)}", meta_format)
             worksheet_summary.set_row(1, 20)
 
+            current_row = 4
+            notes_section_title = "Analyst's Notes"
+            notes_body = analyst_notes if analyst_notes else 'No analyst notes were added for this investigation.'
+            worksheet_summary.write(current_row, 0, notes_section_title, header_format)
+            worksheet_summary.set_row(current_row, 20)
+            current_row += 1
+            worksheet_summary.write(current_row, 0, notes_body, text_format)
+            worksheet_summary.set_row(current_row, max(30, (len(notes_body) / 100) * 18))
+            current_row += 2
+
             # פיצול וכתיבת הנרטיב
             parts = ai_narrative.split('\n\n')
-            current_row = 4
             for part in parts:
                 if "Executive Summary" in part or "Chronological Narrative" in part:
                     worksheet_summary.write(current_row, 0, part.strip(), header_format)
