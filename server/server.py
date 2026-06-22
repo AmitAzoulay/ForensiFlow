@@ -213,7 +213,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 db_client = Neo4jClient(
     uri=os.getenv("NEO4J_URI"),
     user=os.getenv("NEO4J_USER"),
-    password=os.getenv("NEO4J_PASSWORD")
+    password=os.getenv("NEO4J_PASSWORD"),
+    trust_all=os.getenv("NEO4J_TRUST_ALL_CERTS", "false").strip().lower() in {"1", "true", "yes", "on"},
+    database=os.getenv("NEO4J_DATABASE") or None,
 )
 
 @app.route('/api/investigations', methods=['GET'])
