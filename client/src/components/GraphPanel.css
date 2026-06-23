@@ -189,11 +189,18 @@
 }
 
 /* Help button */
-.help-btn {
+.graph-float-actions {
     position: absolute;
     top: 16px;
     right: 16px;
     z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.help-btn {
     width: 28px;
     height: 28px;
     border-radius: 50%;
@@ -215,10 +222,36 @@
     color: var(--text-primary);
 }
 
+.fit-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-soft);
+    transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.fit-btn:hover:not(:disabled) {
+    background: var(--surface-alt);
+    color: var(--text-primary);
+}
+
+.fit-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* Help panel */
 .help-panel {
     position: absolute;
-    top: 52px;
+    top: 92px;
+    bottom: 16px;
     right: 16px;
     z-index: 20;
     width: 270px;
@@ -230,7 +263,6 @@
     color: var(--text-secondary);
     display: flex;
     flex-direction: column;
-    max-height: 80vh;     
     overflow: hidden;
 }
 
