@@ -219,6 +219,7 @@ interface GraphPanelProps {
     onNotebookChange?: (text: string) => void;
     onNotebookClear?: () => void;
     onToggleTheme?: () => void;
+    onResetAppState?: () => void;
     children?: React.ReactNode;
     filtersComponent?: React.ReactNode;
 }
@@ -246,6 +247,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     onNotebookChange,
     onNotebookClear,
     onToggleTheme,
+    onResetAppState,
     children,
     filtersComponent
 }) => {
@@ -539,7 +541,22 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             <div className="top-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '16px 32px', gap: '24px', backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', boxSizing: 'border-box' }}>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
-                    <h2 className="toolbar-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>ForensiFlow</h2>
+                    <button
+                        type="button"
+                        onClick={onResetAppState}
+                        title="Reset to clean state"
+                        aria-label="Reset to clean state"
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            margin: 0,
+                            cursor: onResetAppState ? 'pointer' : 'default',
+                            color: 'inherit'
+                        }}
+                    >
+                        <h2 className="toolbar-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>ForensiFlow</h2>
+                    </button>
                     <button
                         onClick={onToggleTheme}
                         title={`Switch to ${currentTheme === 'light' ? 'dark' : 'light'} mode`}
