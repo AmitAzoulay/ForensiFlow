@@ -1,12 +1,70 @@
 /* --- Global & Typography --- */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-alt: #f8fafc;
+  --surface-muted: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-on-primary: #ffffff;
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-strong: #cbd5e1;
+  --primary: #3b82f6;
+  --overlay: rgba(15, 23, 42, 0.62);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-strong: 0 12px 32px rgba(15, 23, 42, 0.24);
+  --graph-label: #1e293b;
+  --graph-label-stroke: rgba(255, 255, 255, 0.9);
+  --graph-link: #94a3b8;
+  --graph-link-bundle: #0f172a;
+  --graph-canvas-bg: #f8fafc;
+  --graph-grid-dot: #e2e8f0;
+  --playback-surface: rgba(30, 41, 59, 0.95);
+  --playback-border: #334155;
+  --playback-text: #ffffff;
+  --playback-btn-bg: #334155;
+  --playback-btn-text: #ffffff;
+}
+
+body[data-theme='dark'] {
+  --bg: #0b1220;
+  --surface: #111b2d;
+  --surface-alt: #0f1728;
+  --surface-muted: #1c2740;
+  --text-primary: #e2e8f0;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-on-primary: #f8fafc;
+  --border: #22304d;
+  --border-subtle: #1a253b;
+  --border-strong: #334155;
+  --primary: #60a5fa;
+  --overlay: rgba(2, 8, 23, 0.75);
+  --shadow-soft: 0 1px 2px rgba(2, 8, 23, 0.5);
+  --shadow-strong: 0 16px 40px rgba(2, 8, 23, 0.55);
+  --graph-label: #e2e8f0;
+  --graph-label-stroke: rgba(2, 8, 23, 0.9);
+  --graph-link: #64748b;
+  --graph-link-bundle: #cbd5e1;
+  --graph-canvas-bg: #0a1324;
+  --graph-grid-dot: #1f2b44;
+  --playback-surface: rgba(8, 14, 28, 0.96);
+  --playback-border: #334155;
+  --playback-text: #f8fafc;
+  --playback-btn-bg: #1e293b;
+  --playback-btn-text: #e2e8f0;
+}
+
 body {
   margin: 0;
   padding: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--bg);
+  color: var(--text-primary);
   height: 100vh;
   overflow: hidden;
 }
@@ -155,8 +213,8 @@ body {
 .canvas-wrapper {
   flex: 1;
   position: relative;
-  background-color: #f8fafc;
-  background-image: radial-gradient(#e2e8f0 1px, transparent 0);
+  background-color: var(--graph-canvas-bg);
+  background-image: radial-gradient(var(--graph-grid-dot) 1px, transparent 0);
   background-size: 24px 24px;
 }
 

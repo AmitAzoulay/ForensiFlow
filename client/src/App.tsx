@@ -70,9 +70,14 @@ const extractTimestamp = (obj: any): number | null => {
 };
 
 function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const storedTheme = localStorage.getItem('forensiflow-theme');
+    return storedTheme === 'dark' ? 'dark' : 'light';
+  });
   const [rawGraphData, setRawGraphData] = useState({ nodes: [], links: [] });
   const [selectedLink, setSelectedLink] = useState<any>(null);
   const [caseId, setCaseId] = useState<string | null>(null);
+  const [notebookText, setNotebookText] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
@@ -105,6 +110,11 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackIndex, setPlaybackIndex] = useState(0);
 
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+    localStorage.setItem('forensiflow-theme', theme);
+  }, [theme]);
+
   const handleDataLoaded = (data: any, newCaseId: any) => {
     setRawGraphData(data);
     setCaseId(newCaseId);
@@ -129,6 +139,29 @@ function App() {
 
   const handleLinkClick = (link: any) => {
     setSelectedLink(link);
+  };
+
+  useEffect(() => {
+    if (!caseId) {
+      setNotebookText('');
+      return;
+    }
+
+    const storageKey = `forensiflow-notebook:${caseId}`;
+    const savedNotes = localStorage.getItem(storageKey) || '';
+    setNotebookText(savedNotes);
+  }, [caseId]);
+
+  const handleNotebookChange = (nextText: string) => {
+    setNotebookText(nextText);
+    if (!caseId) return;
+    localStorage.setItem(`forensiflow-notebook:${caseId}`, nextText);
+  };
+
+  const handleNotebookClear = () => {
+    setNotebookText('');
+    if (!caseId) return;
+    localStorage.removeItem(`forensiflow-notebook:${caseId}`);
   };
 
   const toggleFilter = (category: string) => {
@@ -323,7 +356,11 @@ function App() {
       const response = await fetch('http://localhost:8000/api/generate-forensic-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes: redNodes, links: redLinks })
+        body: JSON.stringify({
+          nodes: redNodes,
+          links: redLinks,
+          analyst_notes: notebookText
+        })
       });
 
       if (!response.ok) throw new Error("Failed to generate report from server");
@@ -683,9 +720,9 @@ function App() {
   return (
     <>
       {isSaving && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', padding: '30px 50px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', fontSize: '20px', fontWeight: 'bold', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 2s linear infinite' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'var(--overlay)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--surface)', padding: '30px 50px', borderRadius: '12px', boxShadow: 'var(--shadow-strong)', fontSize: '20px', fontWeight: 'bold', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid var(--border)' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 2s linear infinite' }}>
               <line x1="12" y1="2" x2="12" y2="6"></line>
               <line x1="12" y1="18" x2="12" y2="22"></line>
               <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
@@ -702,20 +739,20 @@ function App() {
       )}
 
       {isPlaybackMode && (
-        <div style={{ position: 'fixed', bottom: '40px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(30, 41, 59, 0.95)', padding: '20px 30px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '15px', zIndex: 1000, boxShadow: '0 10px 30px rgba(0,0,0,0.4)', color: 'white', minWidth: '450px', border: '1px solid #334155' }}>
+        <div style={{ position: 'fixed', bottom: '40px', left: '50%', transform: 'translateX(-50%)', background: 'var(--playback-surface)', padding: '20px 30px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '15px', zIndex: 1000, boxShadow: 'var(--shadow-strong)', color: 'var(--playback-text)', minWidth: '450px', border: '1px solid var(--playback-border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444', animation: isPlaying ? 'pulse 1.5s infinite' : 'none' }}></div>
               <span style={{ fontWeight: '600', letterSpacing: '0.5px' }}>Attack Path Analysis</span>
               <style>{`@keyframes pulse { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }`}</style>
             </div>
-            <button onClick={handleExitPlayback} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Exit Player">✖</button>
+            <button onClick={handleExitPlayback} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Exit Player">✖</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center', marginTop: '5px' }}>
-            <button onClick={() => { setPlaybackIndex(0); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Restart">
+            <button onClick={() => { setPlaybackIndex(0); setIsPlaying(false); }} style={{ background: 'var(--playback-btn-bg)', border: 'none', color: 'var(--playback-btn-text)', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Restart">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
             </button>
-            <button onClick={() => { setPlaybackIndex(p => Math.max(0, p - 1)); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Previous Event">
+            <button onClick={() => { setPlaybackIndex(p => Math.max(0, p - 1)); setIsPlaying(false); }} style={{ background: 'var(--playback-btn-bg)', border: 'none', color: 'var(--playback-btn-text)', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Previous Event">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="15 18 9 12 15 6 15 18"></polygon></svg>
             </button>
             <button onClick={() => setIsPlaying(!isPlaying)} style={{ background: isPlaying ? '#f59e0b' : '#3b82f6', border: 'none', color: 'white', width: '48px', height: '48px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }} title={isPlaying ? 'Pause' : 'Play'}>
@@ -725,10 +762,10 @@ function App() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: '4px' }}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
               )}
             </button>
-            <button onClick={() => { setPlaybackIndex(p => Math.min(playbackSequence.length, p + 1)); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Next Event">
+            <button onClick={() => { setPlaybackIndex(p => Math.min(playbackSequence.length, p + 1)); setIsPlaying(false); }} style={{ background: 'var(--playback-btn-bg)', border: 'none', color: 'var(--playback-btn-text)', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Next Event">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="9 18 15 12 9 6 9 18"></polygon></svg>
             </button>
-            <button onClick={() => { setPlaybackIndex(playbackSequence.length); setIsPlaying(false); }} style={{ background: '#334155', border: 'none', color: 'white', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Skip to End">
+            <button onClick={() => { setPlaybackIndex(playbackSequence.length); setIsPlaying(false); }} style={{ background: 'var(--playback-btn-bg)', border: 'none', color: 'var(--playback-btn-text)', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Skip to End">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
             </button>
           </div>
@@ -740,8 +777,8 @@ function App() {
             onChange={(e) => { setPlaybackIndex(Number(e.target.value)); setIsPlaying(false); }}
             style={{ width: '100%', cursor: 'pointer', accentColor: '#ef4444' }}
           />
-          <div style={{ textAlign: 'center', fontSize: '13px', color: '#cbd5e1' }}>
-            Progress: <span style={{ color: 'white', fontWeight: '500' }}>{playbackIndex}</span> / {playbackSequence.length} Events Revealed
+          <div style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
+            Progress: <span style={{ color: 'var(--playback-text)', fontWeight: '500' }}>{playbackIndex}</span> / {playbackSequence.length} Events Revealed
           </div>
         </div>
       )}
@@ -757,6 +794,8 @@ function App() {
       <GraphPanel
         graphData={filteredGraphData}
         caseId={caseId}
+        currentTheme={theme}
+        notebookText={notebookText}
         refreshKey={refreshKey}
         isPlaybackMode={isPlaybackMode}
         activePlaybackNodeIds={activePlaybackNodeIds}
@@ -773,6 +812,9 @@ function App() {
         onSaveEdited={handleSaveEdited}
         onDownloadReport={handleDownloadReport}
         onIsolateLineage={(node) => setLineageTarget(node)}
+        onNotebookChange={handleNotebookChange}
+        onNotebookClear={handleNotebookClear}
+        onToggleTheme={() => setTheme(prev => (prev === 'light' ? 'dark' : 'light'))}
       >
         <LogPanel
           selectedLink={selectedLink}

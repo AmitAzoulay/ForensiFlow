@@ -1,8 +1,8 @@
-flask
-flask-cors
-python-dotenv
-neo4j
-python-evtx
+Flask==3.0.0
+Flask-Cors==4.0.0
+python-dotenv==1.0.0
+neo4j==5.14.1
+python-evtx==0.7.4
 requests
 pandas
 xlsxwriter
