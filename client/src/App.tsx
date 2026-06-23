@@ -672,6 +672,11 @@ function App() {
     return validLinks;
   }, [filteredGraphData]);
 
+  const currentPlaybackLink = useMemo(() => {
+    if (!isPlaybackMode || playbackIndex <= 0) return null;
+    return playbackSequence[Math.min(playbackIndex - 1, playbackSequence.length - 1)] || null;
+  }, [isPlaybackMode, playbackIndex, playbackSequence]);
+
   const { activePlaybackNodeIds, activePlaybackLinkIds } = useMemo(() => {
     if (!isPlaybackMode) {
       return { activePlaybackNodeIds: undefined, activePlaybackLinkIds: undefined };
@@ -852,6 +857,7 @@ function App() {
         onNotebookClear={handleNotebookClear}
         onToggleTheme={() => setTheme(prev => (prev === 'light' ? 'dark' : 'light'))}
         onResetAppState={resetToCleanState}
+        currentPlaybackLink={currentPlaybackLink}
       >
         <LogPanel
           selectedLink={selectedLink}
