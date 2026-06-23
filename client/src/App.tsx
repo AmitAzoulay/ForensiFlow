@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import GraphPanel from './components/GraphPanel';
 import LogPanel from './components/LogPanel';
 import AIAssistant from './components/AIAssistant';
@@ -11,6 +11,11 @@ interface ViewState {
   searchQuery: string;
   activeFilters: string[];
   timeRange: { start: number; end: number } | null;
+}
+
+interface GraphDataState {
+  nodes: any[];
+  links: any[];
 }
 
 type QueryToken =
@@ -74,7 +79,7 @@ function App() {
     const storedTheme = localStorage.getItem('forensiflow-theme');
     return storedTheme === 'dark' ? 'dark' : 'light';
   });
-  const [rawGraphData, setRawGraphData] = useState({ nodes: [], links: [] });
+  const [rawGraphData, setRawGraphData] = useState<GraphDataState>({ nodes: [], links: [] });
   const [selectedLink, setSelectedLink] = useState<any>(null);
   const [caseId, setCaseId] = useState<string | null>(null);
   const [notebookText, setNotebookText] = useState('');
@@ -135,6 +140,37 @@ function App() {
       unredNodes: new Set(),
       unredLinks: new Set()
     });
+  };
+
+  const resetToCleanState = () => {
+    setRawGraphData({ nodes: [], links: [] });
+    setSelectedLink(null);
+    setCaseId(null);
+    setNotebookText('');
+    setSearchQuery('');
+    setActiveFilters([]);
+    setGlobalTimeBounds(null);
+    setTimeRange(null);
+    setExternalAIPrompt(null);
+    setLineageTarget(null);
+    setPastHistory([]);
+    setFutureHistory([]);
+    setSavedQueries([]);
+    setActiveSavedQueryIds([]);
+    setEdits({
+      redNodes: new Set(),
+      redLinks: new Set(),
+      deletedNodes: new Set(),
+      deletedLinks: new Set(),
+      unredNodes: new Set(),
+      unredLinks: new Set()
+    });
+    setIsSaving(false);
+    setLoadingText('');
+    setIsPlaybackMode(false);
+    setIsPlaying(false);
+    setPlaybackIndex(0);
+    setRefreshKey(prev => prev + 1);
   };
 
   const handleLinkClick = (link: any) => {
@@ -815,6 +851,7 @@ function App() {
         onNotebookChange={handleNotebookChange}
         onNotebookClear={handleNotebookClear}
         onToggleTheme={() => setTheme(prev => (prev === 'light' ? 'dark' : 'light'))}
+        onResetAppState={resetToCleanState}
       >
         <LogPanel
           selectedLink={selectedLink}
