@@ -205,6 +205,7 @@ interface GraphPanelProps {
     isPlaybackMode?: boolean;
     activePlaybackNodeIds?: Set<string>;
     activePlaybackLinkIds?: Set<string>;
+    currentPlaybackLink?: any | null;
     hasRedItems?: boolean;
     hasExistingQuery?: boolean;
     onDownloadReport?: () => void;
@@ -233,6 +234,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     isPlaybackMode = false,
     activePlaybackNodeIds,
     activePlaybackLinkIds,
+    currentPlaybackLink,
     hasRedItems = false,
     hasExistingQuery = false,
     onDownloadReport,
@@ -272,6 +274,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     const graphRef = useRef<any>(null);
     const isLassoRef = useRef(false);
     const hoveredItemRef = useRef<any>(null);
+    const playbackFocusTimeoutRef = useRef<number | null>(null);
 
     const themeColors = useMemo(() => {
         if (currentTheme === 'dark') {
@@ -403,6 +406,35 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             graphRef.current.d3ReheatSimulation();
         }
     }, [caseId, graphDataWithCurvature.nodes.length]);
+
+    useEffect(() => {
+        if (!isPlaybackMode || !currentPlaybackLink || !graphRef.current) return;
+
+        if (playbackFocusTimeoutRef.current) {
+            window.clearTimeout(playbackFocusTimeoutRef.current);
+        }
+
+        playbackFocusTimeoutRef.current = window.setTimeout(() => {
+            const sourceId = typeof currentPlaybackLink.source === 'object' ? currentPlaybackLink.source.id : currentPlaybackLink.source;
+            const targetId = typeof currentPlaybackLink.target === 'object' ? currentPlaybackLink.target.id : currentPlaybackLink.target;
+            const targetNode = graphDataWithCurvature.nodes.find((node: any) => node.id === targetId);
+            const sourceNode = graphDataWithCurvature.nodes.find((node: any) => node.id === sourceId);
+            if (!sourceNode || !targetNode) return;
+
+            graphRef.current.zoomToFit(
+                850,
+                140,
+                (node: any) => node.id === sourceNode.id || node.id === targetNode.id
+            );
+        }, 80);
+
+        return () => {
+            if (playbackFocusTimeoutRef.current) {
+                window.clearTimeout(playbackFocusTimeoutRef.current);
+                playbackFocusTimeoutRef.current = null;
+            }
+        };
+    }, [isPlaybackMode, currentPlaybackLink, graphDataWithCurvature.nodes]);
 
     const fetchExistingInvestigation = async () => {
         if (!selectedCaseId) return;
