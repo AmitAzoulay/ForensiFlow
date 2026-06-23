@@ -4,33 +4,13 @@ from neo4j import GraphDatabase
 logger = logging.getLogger(__name__)
 
 class Neo4jClient:
-    def __init__(self, uri, user, password, trust_all=False, database=None):
+    def __init__(self, uri, user, password):
         try:
-            self.database = database
-            uri_to_use = uri
-            if trust_all and isinstance(uri_to_use, str):
-                if uri_to_use.startswith("neo4j+s://"):
-                    uri_to_use = uri_to_use.replace("neo4j+s://", "neo4j+ssc://", 1)
-                elif uri_to_use.startswith("bolt+s://"):
-                    uri_to_use = uri_to_use.replace("bolt+s://", "bolt+ssc://", 1)
-
-            self.driver = GraphDatabase.driver(uri_to_use, auth=(user, password))
-            self.driver.verify_connectivity()
+            self.driver = GraphDatabase.driver(uri, auth=(user, password))
             logger.info("Successfully connected to Neo4j database.")
         except Exception as e:
-            error_text = str(e).lower()
-            if "routing information" in error_text or "certificate verify failed" in error_text:
-                logger.error(
-                    "Neo4j connection failed. This workspace is using a TLS-inspecting path, "
-                    "so NEO4J_TRUST_ALL_CERTS=true is required for neo4j+s://."
-                )
             logger.error(f"Failed to connect to Neo4j: {e}")
             raise
-
-    def _session(self):
-        if self.database:
-            return self.driver.session(database=self.database)
-        return self.driver.session()
 
     def close(self):
         if self.driver:
@@ -43,7 +23,7 @@ class Neo4jClient:
         ORDER BY i.created_at DESC
         """
         try:
-            with self._session() as session:
+            with self.driver.session() as session:
                 results = session.run(query)
                 return [{"case_id": r["case_id"], "name": r["name"]} for r in results]
         except Exception as e:
@@ -60,7 +40,7 @@ class Neo4jClient:
         links = []
         
         try:
-            with self._session() as session:
+            with self.driver.session() as session:
                 results = session.run(query, case_id=case_id)
                 for record in results:
                     node_source = record["n"]
@@ -110,7 +90,7 @@ class Neo4jClient:
         """
         story_lines = []
         try:
-            with self._session() as session:
+            with self.driver.session() as session:
                 results = session.run(query, case_id=case_id, limit=limit)
                 for record in results:
                     line = f"[{record['time']}] {record['src_name']}->{record['action']}->{record['dst_name']}"
@@ -123,7 +103,7 @@ class Neo4jClient:
     def get_investigation_name(self, case_id):
         query = "MATCH (i:Investigation {case_id: $case_id}) RETURN i.name AS name LIMIT 1"
         try:
-            with self._session() as session:
+            with self.driver.session() as session:
                 result = session.run(query, case_id=case_id).single()
                 return result['name'] if result else 'Investigation'
         except Exception as e:
@@ -136,7 +116,7 @@ class Neo4jClient:
         DETACH DELETE n
         """
         try:
-            with self._session() as session:
+            with self.driver.session() as session:
                 session.run(query, case_id=case_id)
         except Exception as e:
             logger.error(f"Database error during delete_investigation: {e}")
@@ -145,7 +125,7 @@ class Neo4jClient:
     def save_edited_graph(self, original_case_id, new_case_id, new_name, nodes, links):
         query_inv = "CREATE (i:Investigation {case_id: $new_case_id, name: $new_name, created_at: timestamp()})"
         try:
-            with self._session() as session:
+            with self.driver.session() as session:
                 tx = session.begin_transaction()
                 tx.run(query_inv, new_case_id=new_case_id, new_name=new_name)
 
