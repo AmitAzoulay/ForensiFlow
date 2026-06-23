@@ -590,26 +590,6 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             </svg>
                         )}
                     </button>
-                    <button
-                        onClick={handleFitGraphToScreen}
-                        disabled={!graphData.nodes.length}
-                        title="Fit graph to screen"
-                        aria-label="Fit graph to screen"
-                        style={{
-                            width: '36px', height: '36px', borderRadius: '8px',
-                            backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)'
-                            ,cursor: graphData.nodes.length ? 'pointer' : 'default', boxShadow: 'var(--shadow-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            opacity: graphData.nodes.length ? 1 : 0.55
-                        }}
-                    >
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M4 9V4h5"></path>
-                            <path d="M20 9V4h-5"></path>
-                            <path d="M4 15v5h5"></path>
-                            <path d="M20 15v5h-5"></path>
-                            <circle cx="12" cy="12" r="3"></circle>
-                        </svg>
-                    </button>
                     <div style={{ display: 'flex', backgroundColor: 'var(--surface-alt)', borderRadius: '8px', padding: '4px', border: '1px solid var(--border)' }}>
                         <button
                             onClick={() => setMode('new')}
@@ -992,13 +972,30 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             </div>
                         )}
 
-                        <button
-                            className="help-btn"
-                            onClick={() => setShowHelp(v => !v)}
-                            title="Navigation help"
-                        >
-                            ?
-                        </button>
+                        <div className="graph-float-actions">
+                            <button
+                                className="help-btn"
+                                onClick={() => setShowHelp(v => !v)}
+                                title="Navigation help"
+                            >
+                                ?
+                            </button>
+                            <button
+                                className="fit-btn"
+                                onClick={handleFitGraphToScreen}
+                                disabled={!graphData.nodes.length}
+                                title="Fit graph to screen"
+                                aria-label="Fit graph to screen"
+                            >
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M4 9V4h5"></path>
+                                    <path d="M20 9V4h-5"></path>
+                                    <path d="M4 15v5h5"></path>
+                                    <path d="M20 15v5h-5"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                            </button>
+                        </div>
 
                         {showHelp && (
                             <div className="help-panel">
