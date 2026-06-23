@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { apiService } from "../services/api";
 import NodeContextMenu from './NodeContextMenu';
-import NotebookPopup from './NotebookPopup';
+import NotebookPopup from './NotebookPopup.tsx';
 import './GraphPanel.css';
 
 const GRAPH_SETTINGS = {
@@ -26,7 +26,15 @@ const ICONS_SVG = {
     GROUP: `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%236366f1"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
 };
 
-const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: any, selectedNodes: any[], activePlaybackNodeIds?: Set<string>) => {
+const drawNodeOnCanvas = (
+    node: any,
+    ctx: any,
+    globalScale: number,
+    nodeIcons: any,
+    selectedNodes: any[],
+    activePlaybackNodeIds?: Set<string>,
+    themeColors?: { label: string; labelStroke: string }
+) => {
     const isPlayback = activePlaybackNodeIds !== undefined;
     const isVisiblePlayback = isPlayback ? activePlaybackNodeIds.has(node.id) : true;
 
@@ -70,17 +78,23 @@ const drawNodeOnCanvas = (node: any, ctx: any, globalScale: number, nodeIcons: a
         ctx.textBaseline = 'top';
         const x = node.x;
         const y = node.y + iconSize / 2 + 2;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.strokeStyle = themeColors?.labelStroke || 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 3 / globalScale;
         ctx.strokeText(label, x, y);
-        ctx.fillStyle = (node.is_red && (!isPlayback || isVisiblePlayback)) ? '#ef4444' : '#1e293b';
+        ctx.fillStyle = (node.is_red && (!isPlayback || isVisiblePlayback)) ? '#ef4444' : (themeColors?.label || '#1e293b');
         ctx.fillText(label, x, y);
     }
 
     ctx.restore();
 };
 
-const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, globalScale: number, activePlaybackLinkIds?: Set<string>) => {
+const drawCurvedLinkOnCanvas = (
+    link: any,
+    ctx: CanvasRenderingContext2D,
+    globalScale: number,
+    activePlaybackLinkIds?: Set<string>,
+    themeColors?: { link: string; bundle: string }
+) => {
     const startNode = link.source;
     const endNode = link.target;
     if (!startNode || !endNode || typeof startNode !== 'object' || typeof endNode !== 'object') return;
@@ -122,8 +136,8 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
     const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
     const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
 
-    let linkColor = link.is_red ? '#ef4444' : GRAPH_SETTINGS.LINK_COLOR;
-    if (link.isBundle) linkColor = '#0f172a';
+    let linkColor = link.is_red ? '#ef4444' : (themeColors?.link || GRAPH_SETTINGS.LINK_COLOR);
+    if (link.isBundle) linkColor = themeColors?.bundle || '#0f172a';
 
     ctx.beginPath();
     ctx.strokeStyle = linkColor;
@@ -185,6 +199,7 @@ const drawCurvedLinkOnCanvas = (link: any, ctx: CanvasRenderingContext2D, global
 interface GraphPanelProps {
     graphData: { nodes: any[], links: any[] };
     caseId?: string | null;
+    currentTheme?: 'light' | 'dark';
     notebookText?: string;
     refreshKey?: number;
     isPlaybackMode?: boolean;
@@ -203,6 +218,7 @@ interface GraphPanelProps {
     onIsolateLineage: (node: any) => void;
     onNotebookChange?: (text: string) => void;
     onNotebookClear?: () => void;
+    onToggleTheme?: () => void;
     children?: React.ReactNode;
     filtersComponent?: React.ReactNode;
 }
@@ -210,6 +226,7 @@ interface GraphPanelProps {
 const GraphPanel: React.FC<GraphPanelProps> = ({
     graphData,
     caseId,
+    currentTheme = 'light',
     notebookText = '',
     refreshKey = 0,
     isPlaybackMode = false,
@@ -228,6 +245,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     onIsolateLineage,
     onNotebookChange,
     onNotebookClear,
+    onToggleTheme,
     children,
     filtersComponent
 }) => {
@@ -252,6 +270,26 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     const graphRef = useRef<any>(null);
     const isLassoRef = useRef(false);
     const hoveredItemRef = useRef<any>(null);
+
+    const themeColors = useMemo(() => {
+        if (currentTheme === 'dark') {
+            return {
+                label: '#e2e8f0',
+                labelStroke: 'rgba(2, 8, 23, 0.9)',
+                link: '#64748b',
+                bundle: '#cbd5e1',
+                canvasBg: '#0a1324'
+            };
+        }
+
+        return {
+            label: '#1e293b',
+            labelStroke: 'rgba(255, 255, 255, 0.9)',
+            link: '#94a3b8',
+            bundle: '#0f172a',
+            canvasBg: '#f8fafc'
+        };
+    }, [currentTheme]);
 
     useEffect(() => {
         const loadSingleImage = (svgString: string) => {
@@ -498,18 +536,46 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
 
     return (
         <div className="graph-panel-container">
-            <div className="top-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '16px 32px', gap: '24px', backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', boxSizing: 'border-box' }}>
+            <div className="top-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '16px 32px', gap: '24px', backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', boxSizing: 'border-box' }}>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
-                    <h2 className="toolbar-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>ForensiFlow</h2>
-                    <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '8px', padding: '4px', border: '1px solid #e2e8f0' }}>
+                    <h2 className="toolbar-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>ForensiFlow</h2>
+                    <button
+                        onClick={onToggleTheme}
+                        title={`Switch to ${currentTheme === 'light' ? 'dark' : 'light'} mode`}
+                        aria-label={`Switch to ${currentTheme === 'light' ? 'dark' : 'light'} mode`}
+                        style={{
+                            width: '36px', height: '36px', borderRadius: '8px',
+                            backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)',
+                            cursor: 'pointer', boxShadow: 'var(--shadow-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                    >
+                        {currentTheme === 'light' ? (
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 12.79A9 9 0 1 1 11.21 3c0 0 0 0 0 0a7 7 0 0 0 9.79 9.79z"></path>
+                            </svg>
+                        ) : (
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="5"></circle>
+                                <line x1="12" y1="1" x2="12" y2="3"></line>
+                                <line x1="12" y1="21" x2="12" y2="23"></line>
+                                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                                <line x1="1" y1="12" x2="3" y2="12"></line>
+                                <line x1="21" y1="12" x2="23" y2="12"></line>
+                                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                            </svg>
+                        )}
+                    </button>
+                    <div style={{ display: 'flex', backgroundColor: 'var(--surface-alt)', borderRadius: '8px', padding: '4px', border: '1px solid var(--border)' }}>
                         <button
                             onClick={() => setMode('new')}
                             disabled={isPlaybackMode}
                             style={{
                                 padding: '6px 12px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: mode === 'new' ? 600 : 500,
-                                backgroundColor: mode === 'new' ? '#ffffff' : 'transparent', color: mode === 'new' ? '#0f172a' : '#64748b',
-                                boxShadow: mode === 'new' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: isPlaybackMode ? 'default' : 'pointer', transition: 'all 0.2s', opacity: isPlaybackMode ? 0.6 : 1
+                                backgroundColor: mode === 'new' ? 'var(--surface)' : 'transparent', color: mode === 'new' ? 'var(--text-primary)' : 'var(--text-muted)',
+                                boxShadow: mode === 'new' ? 'var(--shadow-soft)' : 'none', cursor: isPlaybackMode ? 'default' : 'pointer', transition: 'all 0.2s', opacity: isPlaybackMode ? 0.6 : 1
                             }}
                         >
                             New Investigation
@@ -519,8 +585,8 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             disabled={isPlaybackMode}
                             style={{
                                 padding: '6px 12px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: mode === 'existing' ? 600 : 500,
-                                backgroundColor: mode === 'existing' ? '#ffffff' : 'transparent', color: mode === 'existing' ? '#0f172a' : '#64748b',
-                                boxShadow: mode === 'existing' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', cursor: isPlaybackMode ? 'default' : 'pointer', transition: 'all 0.2s', opacity: isPlaybackMode ? 0.6 : 1
+                                backgroundColor: mode === 'existing' ? 'var(--surface)' : 'transparent', color: mode === 'existing' ? 'var(--text-primary)' : 'var(--text-muted)',
+                                boxShadow: mode === 'existing' ? 'var(--shadow-soft)' : 'none', cursor: isPlaybackMode ? 'default' : 'pointer', transition: 'all 0.2s', opacity: isPlaybackMode ? 0.6 : 1
                             }}
                         >
                             Open Existing
@@ -592,9 +658,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             title="Download Forensics Report"
                             style={{
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                backgroundColor: 'white', color: '#334155', padding: '8px 12px',
-                                borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer',
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: '36px'
+                                    backgroundColor: 'var(--surface)', color: 'var(--text-secondary)', padding: '8px 12px',
+                                    borderRadius: '6px', border: '1px solid var(--border)', cursor: 'pointer',
+                                    boxShadow: 'var(--shadow-soft)', height: '36px'
                             }}
                         >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -610,9 +676,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             onClick={() => setShowNotebook(true)}
                             disabled={isPlaybackMode}
                             style={{
-                                backgroundColor: 'white', color: '#0f172a', border: '1px solid #cbd5e1',
+                                backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)',
                                 padding: '8px 16px', borderRadius: '6px', fontWeight: 600, cursor: isPlaybackMode ? 'default' : 'pointer',
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: '36px', opacity: isPlaybackMode ? 0.6 : 1
+                                boxShadow: 'var(--shadow-soft)', height: '36px', opacity: isPlaybackMode ? 0.6 : 1
                             }}
                         >
                             Notebook
@@ -624,9 +690,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                             onClick={triggerSave}
                             disabled={isPlaybackMode}
                             style={{
-                                backgroundColor: 'white', color: '#0f172a', border: '1px solid #cbd5e1',
+                                backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)',
                                 padding: '8px 16px', borderRadius: '6px', fontWeight: 600, cursor: isPlaybackMode ? 'default' : 'pointer',
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: '36px', opacity: isPlaybackMode ? 0.6 : 1
+                                boxShadow: 'var(--shadow-soft)', height: '36px', opacity: isPlaybackMode ? 0.6 : 1
                             }}
                         >
                             Save Edited
@@ -671,7 +737,8 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 width={dimensions.width}
                                 height={dimensions.height}
                                 graphData={graphDataWithCurvature}
-                                enableZoomPanInteraction={!isLasso}
+                                backgroundColor={themeColors.canvasBg}
+                                enableZoomInteraction={!isLasso}
                                 enableNodeDrag={!isLasso && !isPlaybackMode}
                                 onNodeHover={handleNodeHover}
                                 onLinkHover={handleLinkHover}
@@ -792,9 +859,9 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                     }
                                 }}
                                 cooldownTicks={100}
-                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons, selectedGroup.nodes, activePlaybackNodeIds)}
+                                nodeCanvasObject={(node, ctx, globalScale) => drawNodeOnCanvas(node, ctx, globalScale, nodeIcons, selectedGroup.nodes, activePlaybackNodeIds, themeColors)}
                                 linkCanvasObjectMode={() => 'replace'}
-                                linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale, activePlaybackLinkIds)}
+                                linkCanvasObject={(link, ctx, globalScale) => drawCurvedLinkOnCanvas(link, ctx, globalScale, activePlaybackLinkIds, themeColors)}
                             />
                         ) : (
                             <div className="placeholder">
@@ -836,21 +903,21 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 position: 'absolute',
                                 top: bundlePopup.y,
                                 left: bundlePopup.x,
-                                backgroundColor: '#ffffff',
-                                border: '1px solid #cbd5e1',
+                                backgroundColor: 'var(--surface)',
+                                border: '1px solid var(--border)',
                                 borderRadius: '8px',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                boxShadow: 'var(--shadow-strong)',
                                 zIndex: 1000,
                                 maxHeight: '300px',
                                 overflowY: 'auto',
                                 width: '280px',
                                 fontFamily: 'Inter, sans-serif'
                             }}>
-                                <div style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0', fontWeight: 600, backgroundColor: '#f8fafc', fontSize: '13px', color: '#0f172a' }}>
+                                <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600, backgroundColor: 'var(--surface-alt)', fontSize: '13px', color: 'var(--text-primary)' }}>
                                     Select Event ({bundlePopup.links.length})
                                     <button
                                         onClick={() => setBundlePopup(null)}
-                                        style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                                        style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
                                     >✕</button>
                                 </div>
                                 <div style={{ padding: '4px' }}>
@@ -863,18 +930,18 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                             }}
                                             style={{
                                                 padding: '8px',
-                                                borderBottom: i < bundlePopup.links.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                                borderBottom: i < bundlePopup.links.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                                                 cursor: 'pointer',
                                                 fontSize: '12px',
                                                 display: 'flex',
                                                 flexDirection: 'column',
                                                 gap: '4px'
                                             }}
-                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--surface-alt)'}
                                             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                         >
-                                            <div style={{ fontWeight: 600, color: '#0f172a' }}>{l.type}</div>
-                                            <div style={{ color: '#64748b', fontSize: '11px' }}>
+                                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{l.type}</div>
+                                            <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
                                                 {l.details?.timestamp ? new Date(l.details.timestamp).toLocaleString() : (l.details?.event_id || 'N/A')}
                                             </div>
                                         </div>
@@ -942,7 +1009,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                 isOpen={showNotebook}
                 caseId={caseId || null}
                 notebookText={notebookText}
-                onNotebookChange={(text) => onNotebookChange?.(text)}
+                onNotebookChange={(text: string) => onNotebookChange?.(text)}
                 onClearNotes={() => onNotebookClear?.()}
                 onClose={() => setShowNotebook(false)}
             />

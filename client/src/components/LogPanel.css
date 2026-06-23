@@ -220,6 +220,51 @@
     cursor: not-allowed;
 }
 
+body[data-theme='dark'] .log-panel-sidebar {
+    background-color: var(--surface);
+    border-left-color: var(--border);
+}
+
+body[data-theme='dark'] .log-panel-header {
+    background-color: var(--surface-alt);
+    border-bottom-color: var(--border);
+}
+
+body[data-theme='dark'] .log-panel-header h2,
+body[data-theme='dark'] .action-type,
+body[data-theme='dark'] .data-value {
+    color: var(--text-primary);
+}
+
+body[data-theme='dark'] .title-label,
+body[data-theme='dark'] .data-label,
+body[data-theme='dark'] .timestamp,
+body[data-theme='dark'] .empty-state,
+body[data-theme='dark'] .header-ai-btn {
+    color: var(--text-muted);
+}
+
+body[data-theme='dark'] .block-value {
+    background-color: var(--surface-alt);
+    border-color: var(--border);
+}
+
+body[data-theme='dark'] .divider,
+body[data-theme='dark'] .log-title-row {
+    background: var(--border);
+    border-color: var(--border);
+}
+
+body[data-theme='dark'] .header-ai-btn::after {
+    background-color: #020617;
+    color: var(--text-primary);
+}
+
+body[data-theme='dark'] .header-ai-btn:hover:not(:disabled) {
+    background-color: #1e1b4b;
+    color: #a5b4fc;
+}
+
 .spinner {
     animation: spin 1.5s linear infinite;
 }

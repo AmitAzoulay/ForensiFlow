@@ -329,3 +329,53 @@
     text-align: right;
     letter-spacing: 0.02em;
 }
+
+body[data-theme='dark'] .filters-container,
+body[data-theme='dark'] .advanced-filters-row {
+    background-color: var(--surface-alt);
+    border-bottom-color: var(--border);
+}
+
+body[data-theme='dark'] .filter-label {
+    color: var(--text-muted);
+}
+
+body[data-theme='dark'] .chip {
+    background-color: var(--surface);
+    border-color: var(--border);
+    color: var(--text-secondary);
+}
+
+body[data-theme='dark'] .chip.active {
+    background-color: var(--text-secondary);
+    color: var(--text-on-primary);
+}
+
+body[data-theme='dark'] .modern-input,
+body[data-theme='dark'] .autocomplete-dropdown,
+body[data-theme='dark'] .save-query-btn,
+body[data-theme='dark'] .saved-query-item {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+body[data-theme='dark'] .modern-input:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.15) !important;
+}
+
+body[data-theme='dark'] .back-history-btn,
+body[data-theme='dark'] .forward-history-btn,
+body[data-theme='dark'] .autocomplete-item:hover,
+body[data-theme='dark'] .autocomplete-item.active,
+body[data-theme='dark'] .save-query-btn:hover,
+body[data-theme='dark'] .saved-query-item:hover {
+    background: var(--surface-muted);
+}
+
+body[data-theme='dark'] .autocomplete-item,
+body[data-theme='dark'] .saved-query-meta,
+body[data-theme='dark'] .saved-queries-empty {
+    color: var(--text-muted);
+}
