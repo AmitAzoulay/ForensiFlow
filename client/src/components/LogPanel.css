@@ -249,6 +249,16 @@ body[data-theme='dark'] .block-value {
     border-color: var(--border);
 }
 
+body[data-theme='dark'] .inline-value {
+    background-color: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
 body[data-theme='dark'] .divider,
 body[data-theme='dark'] .log-title-row {
     background: var(--border);

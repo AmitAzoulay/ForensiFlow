@@ -336,6 +336,11 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
         return () => resizeObserver.disconnect();
     }, []);
 
+    const handleFitGraphToScreen = () => {
+        if (!graphRef.current || !graphData.nodes.length) return;
+        graphRef.current.zoomToFit(700, 80);
+    };
+
     const graphDataWithCurvature = useMemo(() => {
         if (!graphData || !graphData.links) return graphData;
 
@@ -584,6 +589,26 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
                                 <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
                             </svg>
                         )}
+                    </button>
+                    <button
+                        onClick={handleFitGraphToScreen}
+                        disabled={!graphData.nodes.length}
+                        title="Fit graph to screen"
+                        aria-label="Fit graph to screen"
+                        style={{
+                            width: '36px', height: '36px', borderRadius: '8px',
+                            backgroundColor: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)'
+                            ,cursor: graphData.nodes.length ? 'pointer' : 'default', boxShadow: 'var(--shadow-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            opacity: graphData.nodes.length ? 1 : 0.55
+                        }}
+                    >
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M4 9V4h5"></path>
+                            <path d="M20 9V4h-5"></path>
+                            <path d="M4 15v5h5"></path>
+                            <path d="M20 15v5h-5"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
                     </button>
                     <div style={{ display: 'flex', backgroundColor: 'var(--surface-alt)', borderRadius: '8px', padding: '4px', border: '1px solid var(--border)' }}>
                         <button
