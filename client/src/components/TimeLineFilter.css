@@ -81,3 +81,40 @@
     color: #36393c;
 }
 
+/* Dark mode styles */
+body[data-theme='dark'] .timeline-container {
+    background-color: #1e293b;
+    border-color: #334155;
+}
+
+body[data-theme='dark'] .timeline-header {
+    color: #cbd5e1;
+}
+
+body[data-theme='dark'] .timeline-display {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: #06b6d4;
+}
+
+body[data-theme='dark'] .slider__track {
+    background-color: #475569;
+}
+
+body[data-theme='dark'] .slider__range {
+    background-color: #0ea5e9;
+}
+
+body[data-theme='dark'] .multi-range-slider .thumb::-webkit-slider-thumb {
+    background-color: #e2e8f0;
+    border-color: #0ea5e9;
+}
+
+body[data-theme='dark'] .multi-range-slider .thumb::-moz-range-thumb {
+    background-color: #e2e8f0;
+    border-color: #0ea5e9;
+}
+
+body[data-theme='dark'] .timeline-labels {
+    color: #94a3b8;
+}
+

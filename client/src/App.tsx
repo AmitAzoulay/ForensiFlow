@@ -665,6 +665,50 @@ function App() {
     return { nodes: finalNodes, links: finalLinks };
   }, [rawGraphData, searchQuery, savedQueries, activeSavedQueryIds, activeFilters, timeRange, globalTimeBounds, edits]);
 
+  const currentViewContext = useMemo(() => {
+    if (!filteredGraphData.nodes.length && !filteredGraphData.links.length) return '';
+
+    const nodeNames = filteredGraphData.nodes
+      .slice(0, 20)
+      .map((node: any) => node.properties?.name || node.name || node.label || node.id)
+      .filter(Boolean);
+
+    const linkSummaries = filteredGraphData.links
+      .slice(0, 20)
+      .map((link: any) => {
+        const sourceName = typeof link.source === 'object'
+          ? (link.source.properties?.name || link.source.name || link.source.label || link.source.id)
+          : link.source;
+        const targetName = typeof link.target === 'object'
+          ? (link.target.properties?.name || link.target.name || link.target.label || link.target.id)
+          : link.target;
+        return `${link.type || link.label || 'LINK'}: ${sourceName} -> ${targetName}`;
+      });
+
+    const activeFiltersSummary = activeFilters.length > 0
+      ? `Active node filters: ${activeFilters.join(', ')}`
+      : 'Active node filters: none';
+
+    const timeRangeSummary = timeRange
+      ? `Active time range: ${new Date(timeRange.start).toISOString()} to ${new Date(timeRange.end).toISOString()}`
+      : 'Active time range: none';
+
+    const querySummary = searchQuery.trim()
+      ? `Active graph query: ${searchQuery.trim()}`
+      : 'Active graph query: none';
+
+    return [
+      'Current graph view only.',
+      `Visible nodes: ${filteredGraphData.nodes.length}`,
+      `Visible links: ${filteredGraphData.links.length}`,
+      querySummary,
+      activeFiltersSummary,
+      timeRangeSummary,
+      nodeNames.length > 0 ? `Visible node names: ${nodeNames.join(', ')}` : 'Visible node names: none',
+      linkSummaries.length > 0 ? `Visible links: ${linkSummaries.join(' | ')}` : 'Visible links: none',
+    ].join('\n');
+  }, [filteredGraphData, activeFilters, searchQuery, timeRange]);
+
   const playbackSequence = useMemo(() => {
     const redLinks = filteredGraphData.links.filter((l: any) => l.is_red);
     const validLinks = redLinks.filter((l: any) => extractTimestamp(l) !== null);
@@ -869,6 +913,7 @@ function App() {
       <AIAssistant
         caseId={caseId}
         externalPrompt={externalAIPrompt}
+        currentViewContext={currentViewContext}
         onReparseComplete={handleReparseComplete}
         onApplyAIQuery={handleApplyAIQuery}
       />

@@ -179,17 +179,23 @@ const drawCurvedLinkOnCanvas = (
         const baseFontSize = GRAPH_SETTINGS.LABEL_FONT_SIZE > 5 ? GRAPH_SETTINGS.LABEL_FONT_SIZE : 10;
         const fontSize = Math.max(baseFontSize / globalScale, 2);
 
+        const isDarkMode = document.body.getAttribute('data-theme') === 'dark';
+        
         ctx.font = link.isBundle ? `700 ${fontSize}px Inter, sans-serif` : `600 ${fontSize}px Inter, sans-serif`;
         const textWidth = ctx.measureText(label).width;
         const bgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.6);
 
         ctx.translate(textPos.x, textPos.y);
         ctx.rotate(textAngle);
-        ctx.fillStyle = link.isBundle ? 'rgba(241, 245, 249, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+        ctx.fillStyle = isDarkMode 
+            ? 'rgba(30, 41, 59, 0.95)'
+            : (link.isBundle ? 'rgba(241, 245, 249, 0.95)' : 'rgba(255, 255, 255, 0.95)');
         ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2 - (fontSize * 0.4), bgDimensions[0], bgDimensions[1]);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = link.isBundle ? '#0f172a' : (link.is_red ? '#ef4444' : '#475569');
+        ctx.fillStyle = isDarkMode
+            ? (link.is_red ? '#ff6b6b' : '#cbd5e1')
+            : (link.isBundle ? '#0f172a' : (link.is_red ? '#ef4444' : '#475569'));
         ctx.fillText(label, 0, -(fontSize * 0.4));
     }
 
