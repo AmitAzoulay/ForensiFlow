@@ -396,7 +396,7 @@ def translate_single_log(log_details):
         logger.error(f"HTTP request failed during single log translation: {e}")
         raise
 
-def generate_forensic_response(timeline_lines, chat_history):
+def generate_forensic_response(timeline_lines, chat_history, context_label='the investigation timeline'):
     """
     Generates an AI response based on the forensic timeline and user chat history.
     """
@@ -409,15 +409,17 @@ def generate_forensic_response(timeline_lines, chat_history):
     context_story = "\n".join(timeline_lines)
 
     system_prompt = f"""You are 'ForensiFlow AI', an expert DFIR assistant.
-Review the following chronological event logs from the graph:
+Review the following event logs from {context_label}:
 
 {context_story}
 
 INSTRUCTIONS:
-1. Base your answers ONLY on the logs provided.
+1. Base your answers ONLY on the logs provided for {context_label}.
 2. If the user asks for a summary, provide a SINGLE, dense, concise paragraph. No bullet points.
 3. For all other chat messages, answer naturally like a helpful forensic analyst discussing the case.
 4. Focus on anomalies, lateral movement, and persistence.
+5. When asked what you can do or how you can help, briefly list your practical capabilities too: summarizing investigations, explaining suspicious activity, spotting anomalies, tracing lateral movement and persistence, generating graph filters for searches, and managing event handlers by adding, removing, listing, or explaining them.
+6. Keep the answer grounded in the provided logs and the current investigation context.
 
 """
 

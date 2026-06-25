@@ -1,5 +1,6 @@
 import ast
 import importlib
+import json
 import logging
 import os
 import re
@@ -7,7 +8,7 @@ import sys
 import uuid
 from pathlib import Path
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -477,63 +478,80 @@ def unified_chat():
     case_id = data.get('case_id')
     history = data.get('history', [])
     handler_history = data.get('handler_history', [])
+    view_context = data.get('view_context', '')
 
     if not history and not handler_history:
         return jsonify({"error": "No message provided"}), 400
 
     last_message = (handler_history or history)[-1].get('content', '')
 
-    try:
-        intent_data = classify_intent(last_message, handler_history)
-    except Exception as e:
-        logger.error(f"Intent classification failed: {e}")
-        intent_data = {"intent": "forensic"}
-
-    intent = intent_data.get('intent', 'forensic')
-
-    if intent == 'handler_agent':
+    def event_stream():
+        """Generator that yields streaming events for chat processing"""
         try:
-            result = run_handler_agent(last_message, handler_history, _tool_executor)
-            return jsonify({
-                "intent": "handler_agent",
-                "summary": result["summary"],
-                "needs_reparse": result["needs_reparse"],
-                "results": result["results"],
-            }), 200
+            intent_data = classify_intent(last_message, handler_history)
         except Exception as e:
-            logger.error(f"Handler agent failed: {e}")
-            return jsonify({
-                "intent": "handler_agent",
-                "summary": f"Error: {e}",
-                "needs_reparse": False,
-                "results": [],
-            }), 200
+            logger.error(f"Intent classification failed: {e}")
+            intent_data = {"intent": "forensic"}
 
-    elif intent == 'query_agent':
-        try:
-            relations = _get_available_relations()
-            result = run_query_agent(last_message, handler_history, relations)
-            return jsonify({
-                "intent": "query_agent",
-                "query": result["query"],
-                "label": result["label"],
-            }), 200
-        except Exception as e:
-            logger.error(f"Query agent failed: {e}")
-            return jsonify({"intent": "query_agent", "query": "", "label": ""}), 200
+        intent = intent_data.get('intent', 'forensic')
 
-    else:  # forensic
-        if not case_id:
-            return jsonify({"intent": "forensic", "reply": "Load a case first to analyze the investigation."}), 200
-        try:
-            timeline = db_client.get_investigation_timeline(case_id)
-            if not timeline:
-                return jsonify({"intent": "forensic", "reply": "No data in the current graph to analyze. Load an EVTX file first."})
-            reply = generate_forensic_response(timeline, history)
-            return jsonify({"intent": "forensic", "reply": reply}), 200
-        except Exception as e:
-            logger.error(f"Forensic chat failed: {e}")
-            return jsonify({"error": "Failed to process AI request"}), 500
+        if intent == 'handler_agent':
+            try:
+                yield f"data: {json.dumps({'type': 'step', 'content': 'Processing handler commands...'})}\n\n"
+                result = run_handler_agent(last_message, handler_history, _tool_executor)
+                yield f"data: {json.dumps({'type': 'response', 'intent': 'handler_agent', 'summary': result['summary'], 'needs_reparse': result['needs_reparse'], 'results': result['results']})}\n\n"
+            except Exception as e:
+                logger.error(f"Handler agent failed: {e}")
+                yield f"data: {json.dumps({'type': 'response', 'intent': 'handler_agent', 'summary': f'Error: {e}', 'needs_reparse': False, 'results': []})}\n\n"
+
+        elif intent == 'query_agent':
+            try:
+                yield f"data: {json.dumps({'type': 'step', 'content': 'Analyzing your request...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'step', 'content': 'Generating graph filter...'})}\n\n"
+                relations = _get_available_relations()
+                result = run_query_agent(last_message, handler_history, relations)
+                yield f"data: {json.dumps({'type': 'response', 'intent': 'query_agent', 'query': result['query'], 'label': result['label']})}\n\n"
+            except Exception as e:
+                logger.error(f"Query agent failed: {e}")
+                yield f"data: {json.dumps({'type': 'response', 'intent': 'query_agent', 'query': '', 'label': '', 'error': str(e)})}\n\n"
+
+        else:  # forensic
+            if not case_id:
+                yield f"data: {json.dumps({'type': 'response', 'intent': 'forensic', 'reply': 'Load a case first to analyze the investigation.'})}\n\n"
+                return
+            try:
+                summary_request = any(keyword in last_message.lower() for keyword in ['summarize', 'summary', 'summarise'])
+                use_current_view = bool(view_context) and summary_request
+                context_lines = [line for line in (view_context.split('\n') if use_current_view else []) if line.strip()]
+                context_label = 'the current graph view' if use_current_view else 'the investigation timeline'
+
+                if not use_current_view:
+                    yield f"data: {json.dumps({'type': 'step', 'content': 'Retrieving investigation timeline...'})}\n\n"
+                    timeline = db_client.get_investigation_timeline(case_id)
+                    if not timeline:
+                        yield f"data: {json.dumps({'type': 'response', 'intent': 'forensic', 'reply': 'No data in the current graph to analyze. Load an EVTX file first.'})}\n\n"
+                        return
+                    context_lines = timeline
+                else:
+                    yield f"data: {json.dumps({'type': 'step', 'content': 'Using the current graph view...'})}\n\n"
+
+                yield f"data: {json.dumps({'type': 'step', 'content': 'Classifying your question...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'step', 'content': 'Analyzing investigation events...'})}\n\n"
+                reply = generate_forensic_response(context_lines, history, context_label=context_label)
+                yield f"data: {json.dumps({'type': 'response', 'intent': 'forensic', 'reply': reply})}\n\n"
+            except Exception as e:
+                logger.error(f"Forensic chat failed: {e}")
+                yield f"data: {json.dumps({'type': 'response', 'intent': 'forensic', 'error': 'Failed to process AI request'})}\n\n"
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+        },
+    )
 
 
 @app.route('/api/investigations/<case_id>', methods=['DELETE'])

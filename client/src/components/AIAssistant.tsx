@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { apiService, type ChatMessage } from "../services/api";
+import { apiService, API_BASE_URL, type ChatMessage } from "../services/api";
 import { useDrag } from '../hooks/useDrag';
 import './AIAssistant.css';
 
 interface AIAssistantProps {
     caseId: string | null;
     externalPrompt?: { text: string; timestamp: number } | null;
+    currentViewContext?: string;
     onReparseComplete?: () => Promise<void>;
     onApplyAIQuery?: (query: string, label: string) => void;
 }
@@ -22,7 +23,12 @@ const renderMessageContent = (content: string) => {
     });
 };
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onReparseComplete, onApplyAIQuery }) => {
+const promptSuggestions = [
+    { label: 'Summarize current view', prompt: 'Summarize the current view only.' },
+    { label: 'How can you help?', prompt: 'What are your capabilities in this application?' },
+];
+
+const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, currentViewContext = '', onReparseComplete, onApplyAIQuery }) => {
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [handlerHistory, setHandlerHistory] = useState<ChatMessage[]>([]);
@@ -30,6 +36,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
     const [inputValue, setInputValue] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [pendingReparse, setPendingReparse] = useState<boolean>(false);
+    const [currentThinkingStep, setCurrentThinkingStep] = useState<string>('');
 
     const { position, isDragging, handleMouseDown } = useDrag();
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -67,45 +74,82 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
         setMessages(prev => [...prev, newUserMsg]);
         setInputValue('');
         setIsLoading(true);
+        setCurrentThinkingStep('Thinking...');
 
         try {
-            const data = await apiService.chat(
-                caseId,
-                [...forensicHistory, newUserMsg],
-                [...handlerHistory, newUserMsg]
-            );
+            const response = await fetch(`${API_BASE_URL}/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    case_id: caseId,
+                    history: [...forensicHistory, newUserMsg],
+                    handler_history: [...handlerHistory, newUserMsg],
+                    view_context: currentViewContext,
+                }),
+            });
 
-            let aiContent: string;
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
 
-            if (data.intent === 'handler_agent') {
-                aiContent = data.summary ?? 'Done.';
-                setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
-                setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
-                if (data.needs_reparse && caseId && onReparseComplete) setPendingReparse(true);
-                return;
-            } else if (data.intent === 'query_agent') {
-                if (data.query) {
-                    aiContent = `Applied filter "${data.label}":\n\`${data.query}\``;
-                    if (onApplyAIQuery) onApplyAIQuery(data.query, data.label);
-                } else {
-                    aiContent = "I couldn't generate a filter query for that request.";
+            const reader = response.body?.getReader();
+            if (!reader) throw new Error('No response stream');
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines[lines.length - 1];
+
+                for (let i = 0; i < lines.length - 1; i++) {
+                    const line = lines[i].trim();
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const event = JSON.parse(line.slice(6));
+
+                            if (event.type === 'step') {
+                                setCurrentThinkingStep(event.content);
+                                await new Promise(requestAnimationFrame);
+                            } else if (event.type === 'response') {
+                                let aiContent: string;
+
+                                if (event.intent === 'handler_agent') {
+                                    aiContent = event.summary ?? 'Done.';
+                                    setHandlerHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
+                                    setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
+                                    if (event.needs_reparse && caseId && onReparseComplete) setPendingReparse(true);
+                                } else if (event.intent === 'query_agent') {
+                                    if (event.query) {
+                                        aiContent = `Applied filter "${event.label}":\n\`${event.query}\``;
+                                        if (onApplyAIQuery) onApplyAIQuery(event.query, event.label);
+                                    } else {
+                                        aiContent = "I couldn't generate a filter query for that request.";
+                                    }
+                                    setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
+                                    setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
+                                } else {
+                                    aiContent = event.reply ?? event.error ?? 'Error processing request.';
+                                    setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
+                                    setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Failed to parse event:', line, e);
+                        }
+                    }
                 }
-                setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
-                setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
-                return;
-            } else {
-                aiContent = data.reply ?? `Error: ${data.error}`;
-                setForensicHistory(prev => [...prev, newUserMsg, { role: 'ai', content: aiContent }]);
-                setMessages(prev => [...prev, { role: 'ai', content: aiContent }]);
             }
         } catch (error: any) {
-            if (error?.response?.status === 429 || error?.message?.includes('429')) {
-                setMessages(prev => [...prev, { role: 'ai', content: 'AI is overloaded right now. Please wait 60 seconds and try again.' }]);
-            } else {
-                setMessages(prev => [...prev, { role: 'ai', content: 'Error connecting to ForensiFlow AI server.' }]);
-            }
+            console.error("Error sending message to AI:", error?.message || error);
+            setMessages(prev => [...prev, { role: 'ai', content: 'Error connecting to ForensiFlow AI server.' }]);
         } finally {
             setIsLoading(false);
+            setCurrentThinkingStep('');
         }
     };
 
@@ -170,6 +214,12 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                     );
                 })}
 
+                {isLoading && (
+                    <div className="ai-message ai ai-thinking">
+                        <span className="thinking-dots">💭 {currentThinkingStep}</span>
+                    </div>
+                )}
+
                 {pendingReparse && !isLoading && (
                     <div className="ai-reparse-prompt">
                         <span>Apply this change to the current investigation?</span>
@@ -179,9 +229,21 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, onRep
                         </div>
                     </div>
                 )}
-
-                {isLoading && <div className="ai-loading">Thinking...</div>}
                 <div ref={messagesEndRef} />
+            </div>
+
+            <div className="ai-suggestion-bar" aria-label="Suggested prompts">
+                {promptSuggestions.map((suggestion) => (
+                    <button
+                        key={suggestion.label}
+                        type="button"
+                        className="ai-suggestion-chip"
+                        onClick={() => handleSendMessage(suggestion.prompt)}
+                        disabled={isLoading}
+                    >
+                        {suggestion.label}
+                    </button>
+                ))}
             </div>
 
             <div className="ai-input-area">
