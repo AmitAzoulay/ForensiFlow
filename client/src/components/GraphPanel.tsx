@@ -341,7 +341,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
 
     const handleFitGraphToScreen = () => {
         if (!graphRef.current || !graphData.nodes.length) return;
-        graphRef.current.zoomToFit(700, 80);
+        graphRef.current.zoomToFit(700, 24);
     };
 
     const graphDataWithCurvature = useMemo(() => {
