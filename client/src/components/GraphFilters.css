@@ -158,6 +158,11 @@
     gap: 6px;
 }
 
+.search-input-wrapper.drag-over {
+    box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.45);
+    border-radius: 8px;
+}
+
 .search-input-wrapper .modern-input {
     flex: 1;
 }

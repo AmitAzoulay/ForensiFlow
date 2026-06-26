@@ -267,6 +267,7 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
 }) => {
     const [suggestionIndex, setSuggestionIndex] = useState(-1);
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [isDragOverQueryBar, setIsDragOverQueryBar] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -396,7 +397,24 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
             <div className="advanced-filters-row">
                 <div className="search-group">
                     <span className="filter-label">ADVANCED:</span>
-                    <div className="search-input-wrapper">
+                    <div
+                        className={`search-input-wrapper${isDragOverQueryBar ? ' drag-over' : ''}`}
+                        onDragOver={e => {
+                            e.preventDefault();
+                            setIsDragOverQueryBar(true);
+                        }}
+                        onDragLeave={() => setIsDragOverQueryBar(false)}
+                        onDrop={e => {
+                            e.preventDefault();
+                            setIsDragOverQueryBar(false);
+                            const droppedQuery = e.dataTransfer.getData('text/plain');
+                            if (droppedQuery) {
+                                onSearchChange(droppedQuery);
+                                setShowSuggestions(false);
+                                requestAnimationFrame(() => inputRef.current?.focus());
+                            }
+                        }}
+                    >
                         <input
                             ref={inputRef}
                             type="text"
@@ -455,11 +473,12 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
 
             {savedQueries.length > 0 && (
                 <div className="saved-queries-row">
-                    <span className="filter-label">SAVED:</span>
+                    <span className="filter-label">Applied Filters:</span>
                     {savedQueries.map(q => {
                         const isEditing = editingId === q.id;
                         const isActive = activeSavedQueryIds.includes(q.id);
                         const displayLabel = q.label ?? q.query;
+                        const displayTitle = q.label ? `${q.label} — ${q.query}` : q.query;
 
                         const startEdit = () => {
                             setEditingId(q.id);
@@ -478,9 +497,16 @@ const GraphFilters: React.FC<GraphFiltersProps> = ({
                             <div
                                 key={q.id}
                                 className={`saved-query-tab${isActive ? ' active' : ''}`}
+                                draggable={!isEditing}
+                                onDragStart={e => {
+                                    if (!isEditing) {
+                                        e.dataTransfer.setData('text/plain', q.query);
+                                        e.dataTransfer.effectAllowed = 'copy';
+                                    }
+                                }}
                                 onClick={() => !isEditing && onToggleSavedQuery(q.id)}
                                 onContextMenu={e => { e.preventDefault(); startEdit(); }}
-                                title={q.query}
+                                title={displayTitle}
                             >
                                 {isEditing ? (
                                     <input
