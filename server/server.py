@@ -18,7 +18,7 @@ from services.ai_agent import (
     generate_forensic_response, generate_report_narrative,
     generate_event_handler, translate_single_log, generate_log_translation
 )
-from services.handlers import deregister_handler
+from services.handlers import deregister_handler, _STATIC_HANDLERS, EVENT_HANDLERS
 from services.evtx_parser import parse_and_store_evtx
 import pandas as pd
 import io
@@ -362,6 +362,8 @@ def _exec_add_handler(event_id: str | None, description: str, name: str) -> dict
                 return {"status": "error", "message": code}
             raise
         detected_id = _validate_handler_ast(code, event_id)
+        if detected_id in EVENT_HANDLERS:
+            return {"status": "error", "message": f"Event ID {detected_id} already exists in the system. No new handler was added."}
         if not safe_name:
             safe_name = f'handler_{detected_id}'
         file_stem = f'event_{detected_id}_{safe_name}'
@@ -589,12 +591,18 @@ def generate_handler_route():
     if not event_id or not event_id.isdigit():
         return jsonify({'error': 'A numeric event_id is required'}), 400
 
+    if event_id in EVENT_HANDLERS:
+        return jsonify({'error': f'Event ID {event_id} already exists in the system. No new handler was added.'}), 400
+
     try:
         code = generate_event_handler(event_id, description)
 
         code = re.sub(r'^```(?:python)?\s*\n?', '', code, flags=re.MULTILINE)
         code = re.sub(r'^```\s*$', '', code, flags=re.MULTILINE).strip()
         event_id = _validate_handler_ast(code, event_id)
+
+        if event_id in _STATIC_HANDLERS:
+            return jsonify({'error': f'Event ID {event_id} already exists in the system. No new handler was added.'}), 400
 
         handler_dir = Path(__file__).parent / 'services' / 'handlers' / 'ai_generated'
         handler_dir.mkdir(exist_ok=True)
