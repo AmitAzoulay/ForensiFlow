@@ -33,6 +33,107 @@ interface GraphFiltersProps {
 
 const EXCLUDED_FIELDS = new Set(['event_id', 'EventID', 'timestamp']);
 
+const WINDOWS_CODE_MAP: Record<string, string> = {
+    '%%1904': 'New value created',
+    '%%1905': 'Value modified',
+    '%%1906': 'Value deleted',
+    '%%1936': 'Type 1 - Default',
+    '%%1937': 'Type 2 - Elevated',
+    '%%1938': 'Type 3 - Limited',
+    '%%1832': 'Anonymous',
+    '%%1833': 'Identification',
+    '%%1840': 'Impersonation',
+    '%%1841': 'Delegation',
+    '%%1842': 'Yes',
+    '%%1843': 'No',
+    '%%14592': 'Inbound',
+    '%%14593': 'Outbound',
+};
+
+const FIELD_VALUE_MAPS: Record<string, Record<string, string>> = {
+    OperationType: {
+        '%%1904': 'New value created',
+        '%%1905': 'Value modified',
+        '%%1906': 'Value deleted',
+    },
+    Status: {
+        '0x0': 'Success',
+        '0xc0000064': 'Unknown username',
+        '0xc000006a': 'Wrong password',
+        '0xc000006d': 'Bad credentials',
+    },
+    SubStatus: {
+        '0x0': 'Success',
+        '0xc0000064': 'Unknown username',
+        '0xc000006a': 'Wrong password',
+        '0xc000006d': 'Bad credentials',
+    },
+    FailureCode: {
+        '0x0': 'Success',
+        '0x1': 'Client not found in Kerberos database',
+        '0x18': 'Pre-authentication failed (wrong password)',
+    },
+};
+
+function parseNumericValue(value: string): number | null {
+    if (!value) return null;
+    const normalized = value.trim();
+    const parsed = parseInt(normalized.startsWith('0x') ? normalized.slice(2) : normalized, normalized.startsWith('0x') ? 16 : 10);
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+function formatAccessMaskValue(rawValue: string): string {
+    const hexVal = parseNumericValue(rawValue);
+    if (hexVal === null) return rawValue;
+
+    const accessTypes: string[] = [];
+    if (hexVal & 0x1)      accessTypes.push('Read Data / List Dir');
+    if (hexVal & 0x2)      accessTypes.push('Write Data / Add File');
+    if (hexVal & 0x4)      accessTypes.push('Append Data / Add Subdir');
+    if (hexVal & 0x8)      accessTypes.push('Read Extended Attrs');
+    if (hexVal & 0x10)     accessTypes.push('Write Extended Attrs');
+    if (hexVal & 0x20)     accessTypes.push('Execute / Traverse');
+    if (hexVal & 0x40)     accessTypes.push('Delete Child');
+    if (hexVal & 0x80)     accessTypes.push('Read Attributes');
+    if (hexVal & 0x100)    accessTypes.push('Write Attributes');
+    if (hexVal & 0x10000)  accessTypes.push('Delete');
+    if (hexVal & 0x20000)  accessTypes.push('Read Control');
+    if (hexVal & 0x40000)  accessTypes.push('Write DAC');
+    if (hexVal & 0x80000)  accessTypes.push('Write Owner');
+    if (hexVal & 0x100000) accessTypes.push('Synchronize');
+
+    return accessTypes.length > 0 ? `${rawValue} (${accessTypes.join(', ')})` : rawValue;
+}
+
+function formatFieldValueForSuggestion(field: string, rawValue: string): string {
+    const normalized = String(rawValue ?? '').trim();
+    if (!normalized || normalized === '-') return normalized;
+
+    if (normalized.includes('(') && normalized.includes(')')) {
+        return normalized;
+    }
+
+    const lowerField = field.toLowerCase();
+    if (lowerField === 'accessmask' || lowerField === 'accesses') {
+        return formatAccessMaskValue(normalized);
+    }
+
+    const fieldMap = FIELD_VALUE_MAPS[field] || FIELD_VALUE_MAPS[field.toLowerCase()];
+    if (fieldMap) {
+        const translated = fieldMap[normalized.toLowerCase()];
+        if (translated) {
+            return `${translated} (${normalized})`;
+        }
+    }
+
+    const codeMapValue = WINDOWS_CODE_MAP[normalized.toLowerCase()];
+    if (codeMapValue) {
+        return `${codeMapValue} (${normalized})`;
+    }
+
+    return normalized;
+}
+
 function getTokenAtEnd(query: string): { token: string; start: number } {
     let start = query.length;
     while (start > 0 && !/[\s()]/.test(query[start - 1])) start--;
@@ -76,11 +177,14 @@ function computeSuggestions(token: string, links: any[], nodes: any[], hasConten
         return rawValues
             .filter(v => v.toLowerCase().includes(prefixLower))
             .slice(0, 8)
-            .map(v => ({
-                label: v,
-                badge: 'value',
-                completion: `${id}.${field}=="${v}"`,
-            }));
+            .map(v => {
+                const label = formatFieldValueForSuggestion(field, v);
+                return {
+                    label,
+                    badge: 'value',
+                    completion: `${id}.${field}=="${label}"`,
+                };
+            });
     }
 
 
