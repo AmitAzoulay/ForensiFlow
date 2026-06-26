@@ -360,6 +360,34 @@ body[data-theme='dark'] .saved-query-item {
     color: var(--text-primary);
 }
 
+body[data-theme='dark'] .saved-queries-row {
+    background: var(--surface-alt);
+    border-bottom-color: var(--border);
+}
+
+body[data-theme='dark'] .saved-query-tab {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text-secondary);
+}
+
+body[data-theme='dark'] .saved-query-tab:hover {
+    background: var(--surface-muted);
+    border-color: var(--border);
+}
+
+body[data-theme='dark'] .saved-query-tab.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--text-on-primary);
+}
+
+body[data-theme='dark'] .autocomplete-hint {
+    background: var(--surface-alt);
+    border-top-color: var(--border);
+    color: var(--text-muted);
+}
+
 body[data-theme='dark'] .modern-input:focus {
     border-color: var(--primary) !important;
     box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.15) !important;
