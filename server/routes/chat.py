@@ -9,7 +9,7 @@ from services.ai_agent import (
     run_handler_agent,
     run_query_agent,
 )
-from services.handler_manager import get_available_relations, tool_executor
+from services.handler_registry import get_available_relations, tool_executor
 
 logger = logging.getLogger(__name__)
 

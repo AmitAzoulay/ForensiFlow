@@ -130,11 +130,7 @@ def generate_report_narrative(evidence_list: list) -> str:
     user_prompt = f"Here are the flagged events in chronological order:\n\n{evidence_text}\n\nPlease generate the narrative report."
     contents = [{"role": "user", "parts": [{"text": user_prompt}]}]
 
-    try:
-        return gemini.generate(REPORT_NARRATIVE_SYSTEM_PROMPT, contents, temperature=0.2)
-    except Exception as e:
-        logger.error(f"Narrative generation failed: {e}")
-        return "Error: Could not generate narrative."
+    return gemini.generate(REPORT_NARRATIVE_SYSTEM_PROMPT, contents, temperature=0.2)
 
 
 def generate_log_translation(log_details) -> str:
@@ -143,10 +139,6 @@ def generate_log_translation(log_details) -> str:
         return "Error: API Key missing."
 
     contents = [{"role": "user", "parts": [{"text": f"Telemetry: {log_details}"}]}]
-    try:
-        result = gemini.generate(LOG_TRANSLATION_SYSTEM_PROMPT, contents, temperature=0.1)
-        logger.info("Translation request completed successfully.")
-        return result
-    except Exception as e:
-        logger.error(f"Log translation failed: {e}")
-        return "Failed to translate log due to an error."
+    result = gemini.generate(LOG_TRANSLATION_SYSTEM_PROMPT, contents, temperature=0.1)
+    logger.info("Translation request completed successfully.")
+    return result
