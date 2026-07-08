@@ -67,13 +67,4 @@ export const apiService = {
         return response.json();
     },
 
-    generateHandler: async (eventId: string, description: string) => {
-        const response = await fetch(`${API_BASE_URL}/generate-handler`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event_id: eventId, description })
-        });
-        if (!response.ok) throw new Error('Failed to generate handler');
-        return response.json();
-    }
 };
