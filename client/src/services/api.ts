@@ -23,7 +23,7 @@ export const apiService = {
         formData.append('evtxFile', file);
         formData.append('invName', invName);
 
-        const response = await fetch(`${API_BASE_URL}/parse-evtx`, {
+        const response = await fetch(`${API_BASE_URL}/investigations`, {
             method: 'POST',
             body: formData
         });
