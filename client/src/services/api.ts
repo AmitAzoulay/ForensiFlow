@@ -32,17 +32,6 @@ export const apiService = {
         return response.json();
     },
 
-    sendChatMessage: async (caseId: string, history: ChatMessage[]) => {
-        const response = await fetch(`${API_BASE_URL}/ai-chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ case_id: caseId, history })
-        });
-
-        if (!response.ok) throw new Error('Failed to communicate with AI service');
-        return response.json();
-    },
-
     translateLog: async (details: Record<string, any>) => {
         const response = await fetch(`${API_BASE_URL}/translate-log`, {
             method: 'POST',
