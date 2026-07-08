@@ -17,17 +17,6 @@ _REL_RE = re.compile(
     r'_insert_graph_relationship\([^,]+,\s*[^,]+,\s*"(\w+)",[^,]+,\s*"(\w+)",[^,]+,\s*"([A-Z_]+)"'
 )
 
-_BUILTIN_RELATIONS = [
-    "ADDED_TO_GROUP", "AUDIT_LOG_CLEARED", "EXPLICIT_CREDS_USED",
-    "FAILED_LOGON", "LOGGED_IN", "MODIFIED_GROUP", "NETWORK_CONNECTION",
-    "OBJECT_ACCESSED_APPEND", "OBJECT_ACCESSED_DELETE", "OBJECT_ACCESSED_EXECUTE",
-    "OBJECT_ACCESSED_READ", "OBJECT_ACCESSED_WRITE", "PRIV_LOGON",
-    "PROCESS_CREATED", "REMOTE_ACCESS", "REQUESTED_HANDLE",
-    "SERVICE_INSTALLED", "TASK_CREATED", "TICKET_REQUESTED",
-    "TOKEN_ASSIGNED", "USED_IP_FOR_TICKET", "USER_CREATED", "USER_DELETED",
-]
-
-
 def extract_reasoning(code: str) -> str:
     lines = []
     for line in code.split('\n'):
@@ -52,12 +41,24 @@ def summarize_handler(code: str, event_id: str) -> str:
 
 
 def get_available_relations() -> list:
-    relations = list(_BUILTIN_RELATIONS)
+    seen = set()
+    relations = []
+
+    for f in sorted(HANDLER_DIR.parent.glob('*.py')):
+        if f.name in ('__init__.py', '_shared.py'):
+            continue
+        for _, _, rel_type in _REL_RE.findall(f.read_text()):
+            if rel_type not in seen:
+                seen.add(rel_type)
+                relations.append(rel_type)
+
     HANDLER_DIR.mkdir(exist_ok=True)
     for f in sorted(HANDLER_DIR.glob('event_*_*.py')):
         for _, _, rel_type in _REL_RE.findall(f.read_text()):
-            if rel_type not in relations:
+            if rel_type not in seen:
+                seen.add(rel_type)
                 relations.append(rel_type)
+
     return relations
 
 
