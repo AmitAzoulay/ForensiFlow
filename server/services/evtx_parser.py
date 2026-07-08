@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import Evtx.Evtx as evtx
 
 from services.handlers import EVENT_HANDLERS
-from windows_event_codes import FIELD_MAPS, WINDOWS_CODE_MAP
+from constants.windows_event_codes import FIELD_MAPS, WINDOWS_CODE_MAP
 
 logger = logging.getLogger(__name__)
 

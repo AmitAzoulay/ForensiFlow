@@ -3,7 +3,7 @@ import logging
 import os
 
 import services.gemini_client as gemini
-from prompts import (
+from constants.prompts import (
     FORENSIC_SYSTEM_PROMPT,
     HANDLER_AGENT_SYSTEM_PROMPT,
     HANDLER_GENERATION_SYSTEM_PROMPT,
