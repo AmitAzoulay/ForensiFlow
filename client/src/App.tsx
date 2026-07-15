@@ -22,7 +22,7 @@ type QueryToken =
   | { type: 'AND' | 'OR' | 'NOT' | 'LPAREN' | 'RPAREN' }
   | { type: 'TERM'; value: string };
 
-function tokenize(query: string): QueryToken[] {
+export function tokenize(query: string): QueryToken[] {
   const tokens: QueryToken[] = [];
   let i = 0;
   while (i < query.length) {
@@ -116,14 +116,14 @@ const FIELD_VALUE_MAPS: Record<string, Record<string, string>> = {
   },
 };
 
-function parseNumericValue(value: string): number | null {
+export function parseNumericValue(value: string): number | null {
   if (!value) return null;
   const normalized = value.trim();
   const parsed = parseInt(normalized.startsWith('0x') ? normalized.slice(2) : normalized, normalized.startsWith('0x') ? 16 : 10);
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function formatFilterValue(fieldName: string, rawValue: string | number | null | undefined): string {
+export function formatFilterValue(fieldName: string, rawValue: string | number | null | undefined): string {
   const normalized = String(rawValue ?? '').trim();
   if (!normalized || normalized === '-') return normalized;
 

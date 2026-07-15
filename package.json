@@ -1,4 +1,11 @@
 {
+  "private": true,
+  "scripts": {
+    "test:server": "cd server && venv\\Scripts\\python.exe -m pytest -q",
+    "test:client": "npm --prefix client run test",
+    "test:client:coverage": "npm --prefix client run test:coverage",
+    "test": "npm run test:server && npm run test:client"
+  },
   "dependencies": {
     "react-force-graph-2d": "^1.29.0"
   }
