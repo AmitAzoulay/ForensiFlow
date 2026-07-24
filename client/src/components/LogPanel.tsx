@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
+import { formatDataValue } from '../utils/formatters';
 import './LogPanel.css';
 
 interface NodeDetails {
@@ -69,118 +70,6 @@ const LogPanel: React.FC<LogPanelProps> = ({
         });
     };
 
-    const formatAccessMask = (maskStr: string): string => {
-        const hexVal = parseInt(maskStr, 16);
-        if (isNaN(hexVal)) return maskStr;
-
-        const accessTypes: string[] = [];
-
-        if (hexVal & 0x1)      accessTypes.push('Read Data / List Dir');
-        if (hexVal & 0x2)      accessTypes.push('Write Data / Add File');
-        if (hexVal & 0x4)      accessTypes.push('Append Data / Add Subdir');
-        if (hexVal & 0x8)      accessTypes.push('Read Extended Attrs');
-        if (hexVal & 0x10)     accessTypes.push('Write Extended Attrs');
-        if (hexVal & 0x20)     accessTypes.push('Execute / Traverse');
-        if (hexVal & 0x40)     accessTypes.push('Delete Child');
-        if (hexVal & 0x80)     accessTypes.push('Read Attributes');
-        if (hexVal & 0x100)    accessTypes.push('Write Attributes');
-        if (hexVal & 0x10000)  accessTypes.push('Delete');
-        if (hexVal & 0x20000)  accessTypes.push('Read Control');
-        if (hexVal & 0x40000)  accessTypes.push('Write DAC');
-        if (hexVal & 0x80000)  accessTypes.push('Write Owner');
-        if (hexVal & 0x100000) accessTypes.push('Synchronize');
-
-        return accessTypes.length > 0 ? `${maskStr} (${accessTypes.join(', ')})` : maskStr;
-    };
-
-    const formatTicketOptions = (optStr: string): string => {
-        const hexVal = parseInt(optStr, 16);
-        if (isNaN(hexVal)) return optStr;
-
-        const flags: string[] = [];
-        if (hexVal & 0x40000000) flags.push('Forwardable');
-        if (hexVal & 0x20000000) flags.push('Forwarded');
-        if (hexVal & 0x10000000) flags.push('Proxiable');
-        if (hexVal & 0x08000000) flags.push('Proxy');
-        if (hexVal & 0x02000000) flags.push('Postdated');
-        if (hexVal & 0x01000000) flags.push('Invalid');
-        if (hexVal & 0x00800000) flags.push('Renewable');
-        if (hexVal & 0x00200000) flags.push('Initial');
-        if (hexVal & 0x00100000) flags.push('Pre-Authenticated');
-        if (hexVal & 0x00080000) flags.push('HW-Authenticated');
-        if (hexVal & 0x00010000) flags.push('OK-as-Delegate');
-
-        return flags.length > 0 ? `${optStr} (${flags.join(', ')})` : optStr;
-    };
-
-    const formatLogonType = (type: string): string => {
-        const types: Record<string, string> = {
-            '2': 'Interactive (Local)',
-            '3': 'Network (Remote)',
-            '4': 'Batch',
-            '5': 'Service',
-            '7': 'Unlock',
-            '8': 'NetworkCleartext',
-            '9': 'NewCredentials',
-            '10': 'RemoteInteractive (RDP)',
-            '11': 'CachedInteractive'
-        };
-        return types[type] ? `${type} (${types[type]})` : type;
-    };
-
-    const formatStartType = (startTypeStr: string): string => {
-        const types: Record<string, string> = {
-            '0': 'Boot Start',
-            '1': 'System Start',
-            '2': 'Auto Start',
-            '3': 'Demand Start',
-            '4': 'Disabled'
-        };
-        return types[startTypeStr] ? `${startTypeStr} (${types[startTypeStr]})` : startTypeStr;
-    };
-
-    const formatServiceType = (serviceTypeStr: string): string => {
-        const val = parseInt(serviceTypeStr.startsWith('0x') ? serviceTypeStr.slice(2) : serviceTypeStr, 16);
-        if (isNaN(val)) return serviceTypeStr;
-
-        const types: string[] = [];
-        if (val & 0x1) types.push('Kernel Driver');
-        if (val & 0x2) types.push('File System Driver');
-        if (val & 0x4) types.push('Adapter');
-        if (val & 0x8) types.push('Recognizer Driver');
-
-        if (val & 0x10) types.push('Win32 Own Process');
-        if (val & 0x20) types.push('Win32 Share Process');
-
-        if (val & 0x100) types.push('Interactive Process');
-
-        return types.length > 0 ? `${serviceTypeStr} (${types.join(' + ')})` : serviceTypeStr;
-    };
-
-    const formatDataValue = (key: string, value: any): string => {
-        const strVal = String(value);
-        if (!strVal || strVal === '-') return '-';
-
-        if (key === 'AccessMask' || key === 'Accesses') {
-            return formatAccessMask(strVal);
-        }
-        if (key === 'TicketOptions') {
-            return formatTicketOptions(strVal);
-        }
-        if (key === 'ServiceStartType') {
-            return formatStartType(strVal);
-        }
-        if (key === 'ServiceType') {
-            return formatServiceType(strVal);
-        }
-        if (key === 'LogonType') {
-            return formatLogonType(strVal);
-        }
-        return strVal;
-    };
-
-
-
     const handleRowContextMenu = (e: React.MouseEvent, fieldName: string, value: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -191,28 +80,14 @@ const LogPanel: React.FC<LogPanelProps> = ({
         if (!selectedLink) return;
         setIsTranslating(true);
         try {
-            const logDetails = JSON.stringify(selectedLink.details, null, 2);
-
-            const response = await fetch('http://localhost:8000/api/translate-log', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ case_id: caseId, log_details: logDetails })
-            });
-
-            if (response.status === 429) {
-                setAiTranslation("Rate limit exceeded. Please wait a minute before requesting another explanation.");
-                setIsTranslating(false);
-                return;
-            }
-
-            const data = await response.json();
-            if (data.reply) {
-                setAiTranslation(data.reply);
+            const data = await apiService.translateLog(caseId, selectedLink.details ?? {});
+            setAiTranslation(data.reply ?? `Error: ${data.error ?? 'Failed to translate'}`);
+        } catch (error: any) {
+            if (error?.status === 429) {
+                setAiTranslation('Rate limit exceeded. Please wait a minute before requesting another explanation.');
             } else {
-                setAiTranslation(`Error: ${data.error || 'Failed to translate'}`);
+                setAiTranslation('Error connecting to ForensiFlow AI server.');
             }
-        } catch (error) {
-            setAiTranslation("Error connecting to ForensiFlow AI server.");
         } finally {
             setIsTranslating(false);
         }

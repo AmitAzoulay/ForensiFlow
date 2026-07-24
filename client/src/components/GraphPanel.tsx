@@ -473,12 +473,8 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
     const handleDeleteInvestigation = async (idToDelete: string) => {
         if (!window.confirm("Are you sure you want to delete this investigation?")) return;
         try {
-            await fetch(`http://localhost:8000/api/investigations/${idToDelete}`, {
-                method: 'DELETE'
-            });
-
+            await apiService.deleteInvestigation(idToDelete);
             setInvestigationsList(prev => prev.filter(inv => inv.case_id !== idToDelete));
-
             if (selectedCaseId === idToDelete) {
                 const remaining = investigationsList.filter(inv => inv.case_id !== idToDelete);
                 setSelectedCaseId(remaining.length > 0 ? remaining[0].case_id : '');
