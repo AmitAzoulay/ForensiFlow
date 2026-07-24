@@ -10,21 +10,90 @@ logger = logging.getLogger(__name__)
 
 _CODE_RE = re.compile(r'%%\d+')
 
+_ACCESS_MASK_BITS = [
+    (0x1,      'Read Data / List Dir'),
+    (0x2,      'Write Data / Add File'),
+    (0x4,      'Append Data / Add Subdir'),
+    (0x8,      'Read Extended Attrs'),
+    (0x10,     'Write Extended Attrs'),
+    (0x20,     'Execute / Traverse'),
+    (0x40,     'Delete Child'),
+    (0x80,     'Read Attributes'),
+    (0x100,    'Write Attributes'),
+    (0x10000,  'Delete'),
+    (0x20000,  'Read Control'),
+    (0x40000,  'Write DAC'),
+    (0x80000,  'Write Owner'),
+    (0x100000, 'Synchronize'),
+]
+
+_SERVICE_TYPE_BITS = [
+    (0x1,   'Kernel Driver'),
+    (0x2,   'File System Driver'),
+    (0x4,   'Adapter'),
+    (0x8,   'Recognizer Driver'),
+    (0x10,  'Win32 Own Process'),
+    (0x20,  'Win32 Share Process'),
+    (0x100, 'Interactive Process'),
+]
+
+_TICKET_OPTIONS_BITS = [
+    (0x40000000, 'Forwardable'),
+    (0x20000000, 'Forwarded'),
+    (0x10000000, 'Proxiable'),
+    (0x08000000, 'Proxy'),
+    (0x02000000, 'Postdated'),
+    (0x01000000, 'Invalid'),
+    (0x00800000, 'Renewable'),
+    (0x00200000, 'Initial'),
+    (0x00100000, 'Pre-Authenticated'),
+    (0x00080000, 'HW-Authenticated'),
+    (0x00010000, 'OK-as-Delegate'),
+]
+
+_BITMASK_FIELDS = {
+    'AccessMask':    _ACCESS_MASK_BITS,
+    'Accesses':      _ACCESS_MASK_BITS,
+    'ServiceType':   _SERVICE_TYPE_BITS,
+    'TicketOptions': _TICKET_OPTIONS_BITS,
+}
+
+
+def _decode_bitmask(raw: str, bit_table: list) -> str:
+    try:
+        val = int(raw, 16) if raw.lower().startswith('0x') else int(raw)
+    except (ValueError, TypeError):
+        return raw
+    flags = [label for bit, label in bit_table if val & bit]
+    return f"{raw} ({', '.join(flags)})" if flags else raw
+
 
 def _interpret_value(field_name: str, raw: str) -> str:
     if not raw or raw == '-':
         return raw
+
+    # Bitmask fields — fall through if the value isn't a plain hex/int
+    bit_table = _BITMASK_FIELDS.get(field_name)
+    if bit_table:
+        result = _decode_bitmask(raw, bit_table)
+        if result != raw:
+            return result
+
+    # Lookup-table fields (NTSTATUS, Kerberos, LogonType, etc.)
     field_map = FIELD_MAPS.get(field_name)
     if field_map:
-        interp = field_map.get(raw.lower().strip())
+        interp = field_map.get(raw.lower().strip()) or field_map.get(raw.strip())
         if interp:
             return f"{interp} ({raw})"
+
+    # %%code substitution (OperationType, ImpersonationLevel, etc.)
     if _CODE_RE.search(raw):
         def _replace(m):
             code = m.group(0)
             interp = WINDOWS_CODE_MAP.get(code)
             return f"{interp} ({code})" if interp else code
         return _CODE_RE.sub(_replace, raw)
+
     return raw
 
 

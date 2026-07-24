@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import type { GraphData, GraphNode, GraphLink, EditState, SavedQuery } from '../types';
-import { formatFilterValue } from '../utils/formatters';
 
 type QueryToken =
   | { type: 'AND' | 'OR' | 'NOT' | 'LPAREN' | 'RPAREN' }
@@ -105,9 +104,7 @@ function evaluateTerm(term: string, link: GraphLink, baseNodes: GraphNode[]): bo
     } else if (identifierMatches && (targetField === 'target' || targetField === 'dst')) {
       matchResult = (dstNode?.properties?.name ?? '').toLowerCase().includes(targetValue);
     } else if (identifierMatches && targetField in details) {
-      const actualValue = details[targetField]?.toString() ?? '';
-      const formattedValue = formatFilterValue(targetField, actualValue);
-      matchResult = [actualValue, formattedValue].some(v => v.toLowerCase().includes(targetValue));
+      matchResult = (details[targetField]?.toString() ?? '').toLowerCase().includes(targetValue);
     } else {
       matchResult = false;
     }

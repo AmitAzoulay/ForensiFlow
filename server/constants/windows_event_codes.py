@@ -149,6 +149,26 @@ PROTOCOL_MAP = {
     '58': 'ICMPv6',
 }
 
+LOGON_TYPE_MAP = {
+    '2':  'Interactive (Local)',
+    '3':  'Network (Remote)',
+    '4':  'Batch',
+    '5':  'Service',
+    '7':  'Unlock',
+    '8':  'NetworkCleartext',
+    '9':  'NewCredentials',
+    '10': 'RemoteInteractive (RDP)',
+    '11': 'CachedInteractive',
+}
+
+SERVICE_START_TYPE_MAP = {
+    '0': 'Boot Start',
+    '1': 'System Start',
+    '2': 'Auto Start',
+    '3': 'Demand Start',
+    '4': 'Disabled',
+}
+
 FIELD_MAPS = {
     'Status':               NTSTATUS_MAP,
     'SubStatus':            NTSTATUS_MAP,
@@ -156,4 +176,6 @@ FIELD_MAPS = {
     'TicketEncryptionType': ENCRYPTION_TYPE_MAP,
     'Protocol':             PROTOCOL_MAP,
     'PreAuthType':          PRE_AUTH_TYPE_MAP,
+    'LogonType':            LOGON_TYPE_MAP,
+    'ServiceStartType':     SERVICE_START_TYPE_MAP,
 }

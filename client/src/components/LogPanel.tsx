@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
-import { formatDataValue } from '../utils/formatters';
 import './LogPanel.css';
 
 interface NodeDetails {
@@ -196,7 +195,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
                                             {key.replace(/_/g, ' ')}
                                         </span>
                                         <span className="data-value inline-value">
-                                            {formatDataValue(key, value)}
+                                            {String(value)}
                                         </span>
                                     </div>
                                 )
