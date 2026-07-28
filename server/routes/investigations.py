@@ -36,7 +36,15 @@ def create_blueprint(db_client):
             safe_inv_name = "Inv"
 
         case_id = str(uuid.uuid4())
-        filepath = str(_UPLOAD_FOLDER / f"{safe_inv_name}_{case_id}.evtx")
+        _UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+        base_upload_dir = _UPLOAD_FOLDER.resolve()
+        candidate_path = (base_upload_dir / f"{safe_inv_name}_{case_id}.evtx").resolve()
+        try:
+            candidate_path.relative_to(base_upload_dir)
+        except ValueError:
+            return jsonify({"error": "Invalid upload path"}), 400
+
+        filepath = str(candidate_path)
         file.save(filepath)
 
         try:
