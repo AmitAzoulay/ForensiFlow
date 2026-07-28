@@ -13,12 +13,6 @@ import { formatFilterValue } from './utils/formatters';
 import type { GraphData, ViewState, EditState, SavedQuery } from './types';
 import './App.css';
 
-interface ViewState {
-  searchQuery: string;
-  activeFilters: string[];
-  timeRange: { start: number; end: number } | null;
-}
-
 interface GraphDataState {
   nodes: any[];
   links: any[];
@@ -36,19 +30,16 @@ export function tokenize(query: string): QueryToken[] {
     if (query[i] === '(') { tokens.push({ type: 'LPAREN' }); i++; continue; }
     if (query[i] === ')') { tokens.push({ type: 'RPAREN' }); i++; continue; }
     const start = i;
-    // Read initial word; pass through quoted sections so "path with spaces" stays together
     while (i < query.length && !/[\s()]/.test(query[i])) {
       if (query[i] === '"' || query[i] === "'") {
         const q = query[i++];
         while (i < query.length && query[i] !== q) i++;
-        if (i < query.length) i++; // closing quote
+        if (i < query.length) i++;
       } else {
         i++;
       }
     }
     const word = query.slice(start, i);
-    // If this word is a field filter (contains ==), greedily absorb the rest of
-    // the value even if it has spaces — stop only at ), AND, OR, NOT
     if (word.includes('==')) {
       while (i < query.length) {
         let j = i;
@@ -129,54 +120,15 @@ export function parseNumericValue(value: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-export function formatFilterValue(fieldName: string, rawValue: string | number | null | undefined): string {
-  const normalized = String(rawValue ?? '').trim();
-  if (!normalized || normalized === '-') return normalized;
-
-  if (normalized.includes('(') && normalized.includes(')')) {
-    return normalized;
-  }
-
-  const lowerField = fieldName.toLowerCase();
-  if (lowerField === 'accessmask' || lowerField === 'accesses') {
-    const hexVal = parseNumericValue(normalized);
-    if (hexVal !== null) {
-      const accessTypes: string[] = [];
-      if (hexVal & 0x1) accessTypes.push('Read Data / List Dir');
-      if (hexVal & 0x2) accessTypes.push('Write Data / Add File');
-      if (hexVal & 0x4) accessTypes.push('Append Data / Add Subdir');
-      if (hexVal & 0x8) accessTypes.push('Read Extended Attrs');
-      if (hexVal & 0x10) accessTypes.push('Write Extended Attrs');
-      if (hexVal & 0x20) accessTypes.push('Execute / Traverse');
-      if (hexVal & 0x40) accessTypes.push('Delete Child');
-      if (hexVal & 0x80) accessTypes.push('Read Attributes');
-      if (hexVal & 0x100) accessTypes.push('Write Attributes');
-      if (hexVal & 0x10000) accessTypes.push('Delete');
-      if (hexVal & 0x20000) accessTypes.push('Read Control');
-      if (hexVal & 0x40000) accessTypes.push('Write DAC');
-      if (hexVal & 0x80000) accessTypes.push('Write Owner');
-      if (hexVal & 0x100000) accessTypes.push('Synchronize');
-      if (accessTypes.length > 0) {
-        return `${normalized} (${accessTypes.join(', ')})`;
-      }
-    }
-  }
-
-  const fieldMap = FIELD_VALUE_MAPS[fieldName] || FIELD_VALUE_MAPS[fieldName.toLowerCase()];
-  if (fieldMap) {
-    const translated = fieldMap[normalized.toLowerCase()];
-    if (translated) {
-      return `${translated} (${normalized})`;
-    }
-  }
-
-  const codeMapValue = WINDOWS_CODE_MAP[normalized.toLowerCase()];
-  if (codeMapValue) {
-    return `${codeMapValue} (${normalized})`;
-  }
-
-  return normalized;
-}
+const EMPTY_GRAPH: GraphData = { nodes: [], links: [] };
+const EMPTY_EDITS: EditState = {
+  redNodes: new Set(),
+  redLinks: new Set(),
+  deletedNodes: new Set(),
+  deletedLinks: new Set(),
+  unredNodes: new Set(),
+  unredLinks: new Set(),
+};
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
