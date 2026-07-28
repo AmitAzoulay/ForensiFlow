@@ -13,15 +13,170 @@ import { formatFilterValue } from './utils/formatters';
 import type { GraphData, ViewState, EditState, SavedQuery } from './types';
 import './App.css';
 
-const EMPTY_GRAPH: GraphData = { nodes: [], links: [] };
-const EMPTY_EDITS: EditState = {
-  redNodes: new Set(),
-  redLinks: new Set(),
-  deletedNodes: new Set(),
-  deletedLinks: new Set(),
-  unredNodes: new Set(),
-  unredLinks: new Set(),
+interface ViewState {
+  searchQuery: string;
+  activeFilters: string[];
+  timeRange: { start: number; end: number } | null;
+}
+
+interface GraphDataState {
+  nodes: any[];
+  links: any[];
+}
+
+type QueryToken =
+  | { type: 'AND' | 'OR' | 'NOT' | 'LPAREN' | 'RPAREN' }
+  | { type: 'TERM'; value: string };
+
+export function tokenize(query: string): QueryToken[] {
+  const tokens: QueryToken[] = [];
+  let i = 0;
+  while (i < query.length) {
+    if (/\s/.test(query[i])) { i++; continue; }
+    if (query[i] === '(') { tokens.push({ type: 'LPAREN' }); i++; continue; }
+    if (query[i] === ')') { tokens.push({ type: 'RPAREN' }); i++; continue; }
+    const start = i;
+    // Read initial word; pass through quoted sections so "path with spaces" stays together
+    while (i < query.length && !/[\s()]/.test(query[i])) {
+      if (query[i] === '"' || query[i] === "'") {
+        const q = query[i++];
+        while (i < query.length && query[i] !== q) i++;
+        if (i < query.length) i++; // closing quote
+      } else {
+        i++;
+      }
+    }
+    const word = query.slice(start, i);
+    // If this word is a field filter (contains ==), greedily absorb the rest of
+    // the value even if it has spaces — stop only at ), AND, OR, NOT
+    if (word.includes('==')) {
+      while (i < query.length) {
+        let j = i;
+        while (j < query.length && /\s/.test(query[j])) j++;
+        if (j >= query.length || query[j] === ')') break;
+        let k = j;
+        while (k < query.length && !/[\s()]/.test(query[k])) k++;
+        const next = query.slice(j, k).toLowerCase();
+        if (next === 'and' || next === 'or' || next === 'not') break;
+        i = k;
+      }
+      tokens.push({ type: 'TERM', value: query.slice(start, i) });
+    } else {
+      if (word.toLowerCase() === 'and') tokens.push({ type: 'AND' });
+      else if (word.toLowerCase() === 'or') tokens.push({ type: 'OR' });
+      else if (word.toLowerCase() === 'not' || word === '!') tokens.push({ type: 'NOT' });
+      else tokens.push({ type: 'TERM', value: word });
+    }
+  }
+  return tokens;
+}
+
+const extractTimestamp = (obj: any): number | null => {
+  if (!obj) return null;
+  if (obj.timestamp) return new Date(obj.timestamp).getTime();
+  if (obj.time) return new Date(obj.time).getTime();
+  if (obj.details?.timestamp) return new Date(obj.details.timestamp).getTime();
+  if (obj.details?.System?.TimeCreated?.SystemTime) return new Date(obj.details.System.TimeCreated.SystemTime).getTime();
+  return null;
 };
+
+const WINDOWS_CODE_MAP: Record<string, string> = {
+  '%%1904': 'New value created',
+  '%%1905': 'Value modified',
+  '%%1906': 'Value deleted',
+  '%%1936': 'Type 1 - Default',
+  '%%1937': 'Type 2 - Elevated',
+  '%%1938': 'Type 3 - Limited',
+  '%%1832': 'Anonymous',
+  '%%1833': 'Identification',
+  '%%1840': 'Impersonation',
+  '%%1841': 'Delegation',
+  '%%1842': 'Yes',
+  '%%1843': 'No',
+  '%%14592': 'Inbound',
+  '%%14593': 'Outbound',
+};
+
+const FIELD_VALUE_MAPS: Record<string, Record<string, string>> = {
+  OperationType: {
+    '%%1904': 'New value created',
+    '%%1905': 'Value modified',
+    '%%1906': 'Value deleted',
+  },
+  Status: {
+    '0x0': 'Success',
+    '0xc0000064': 'Unknown username',
+    '0xc000006a': 'Wrong password',
+    '0xc000006d': 'Bad credentials',
+  },
+  SubStatus: {
+    '0x0': 'Success',
+    '0xc0000064': 'Unknown username',
+    '0xc000006a': 'Wrong password',
+    '0xc000006d': 'Bad credentials',
+  },
+  FailureCode: {
+    '0x0': 'Success',
+    '0x1': 'Client not found in Kerberos database',
+    '0x18': 'Pre-authentication failed (wrong password)',
+  },
+};
+
+export function parseNumericValue(value: string): number | null {
+  if (!value) return null;
+  const normalized = value.trim();
+  const parsed = parseInt(normalized.startsWith('0x') ? normalized.slice(2) : normalized, normalized.startsWith('0x') ? 16 : 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+export function formatFilterValue(fieldName: string, rawValue: string | number | null | undefined): string {
+  const normalized = String(rawValue ?? '').trim();
+  if (!normalized || normalized === '-') return normalized;
+
+  if (normalized.includes('(') && normalized.includes(')')) {
+    return normalized;
+  }
+
+  const lowerField = fieldName.toLowerCase();
+  if (lowerField === 'accessmask' || lowerField === 'accesses') {
+    const hexVal = parseNumericValue(normalized);
+    if (hexVal !== null) {
+      const accessTypes: string[] = [];
+      if (hexVal & 0x1) accessTypes.push('Read Data / List Dir');
+      if (hexVal & 0x2) accessTypes.push('Write Data / Add File');
+      if (hexVal & 0x4) accessTypes.push('Append Data / Add Subdir');
+      if (hexVal & 0x8) accessTypes.push('Read Extended Attrs');
+      if (hexVal & 0x10) accessTypes.push('Write Extended Attrs');
+      if (hexVal & 0x20) accessTypes.push('Execute / Traverse');
+      if (hexVal & 0x40) accessTypes.push('Delete Child');
+      if (hexVal & 0x80) accessTypes.push('Read Attributes');
+      if (hexVal & 0x100) accessTypes.push('Write Attributes');
+      if (hexVal & 0x10000) accessTypes.push('Delete');
+      if (hexVal & 0x20000) accessTypes.push('Read Control');
+      if (hexVal & 0x40000) accessTypes.push('Write DAC');
+      if (hexVal & 0x80000) accessTypes.push('Write Owner');
+      if (hexVal & 0x100000) accessTypes.push('Synchronize');
+      if (accessTypes.length > 0) {
+        return `${normalized} (${accessTypes.join(', ')})`;
+      }
+    }
+  }
+
+  const fieldMap = FIELD_VALUE_MAPS[fieldName] || FIELD_VALUE_MAPS[fieldName.toLowerCase()];
+  if (fieldMap) {
+    const translated = fieldMap[normalized.toLowerCase()];
+    if (translated) {
+      return `${translated} (${normalized})`;
+    }
+  }
+
+  const codeMapValue = WINDOWS_CODE_MAP[normalized.toLowerCase()];
+  if (codeMapValue) {
+    return `${codeMapValue} (${normalized})`;
+  }
+
+  return normalized;
+}
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
