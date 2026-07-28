@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { apiService, API_BASE_URL, type ChatMessage } from "../services/api";
+import { apiService, type ChatMessage } from "../services/api";
 import { useDrag } from '../hooks/useDrag';
 import './AIAssistant.css';
 
@@ -77,20 +77,12 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ caseId, externalPrompt, curre
         setCurrentThinkingStep('Thinking...');
 
         try {
-            const response = await fetch(`${API_BASE_URL}/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    case_id: caseId,
-                    history: [...forensicHistory, newUserMsg],
-                    handler_history: [...handlerHistory, newUserMsg],
-                    view_context: currentViewContext,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
+            const response = await apiService.chatStream(
+                caseId,
+                [...forensicHistory, newUserMsg],
+                [...handlerHistory, newUserMsg],
+                currentViewContext,
+            );
 
             const reader = response.body?.getReader();
             if (!reader) throw new Error('No response stream');

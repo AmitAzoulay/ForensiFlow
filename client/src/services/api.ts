@@ -22,41 +22,17 @@ export const apiService = {
         const formData = new FormData();
         formData.append('evtxFile', file);
         formData.append('invName', invName);
-
-        const response = await fetch(`${API_BASE_URL}/parse-evtx`, {
+        const response = await fetch(`${API_BASE_URL}/investigations`, {
             method: 'POST',
-            body: formData
+            body: formData,
         });
-
         if (!response.ok) throw new Error('Failed to parse EVTX file');
-        return response.json();
-    },
-
-    sendChatMessage: async (caseId: string, history: ChatMessage[]) => {
-        const response = await fetch(`${API_BASE_URL}/ai-chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ case_id: caseId, history })
-        });
-
-        if (!response.ok) throw new Error('Failed to communicate with AI service');
-        return response.json();
-    },
-
-    translateLog: async (details: Record<string, any>) => {
-        const response = await fetch(`${API_BASE_URL}/translate-log`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ details })
-        });
-
-        if (!response.ok) throw new Error('Failed to translate log');
         return response.json();
     },
 
     deleteInvestigation: async (caseId: string) => {
         const response = await fetch(`${API_BASE_URL}/investigations/${caseId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
         });
         if (!response.ok) throw new Error('Failed to delete investigation');
         return response.json();
@@ -68,23 +44,59 @@ export const apiService = {
         return response.json();
     },
 
-    chat: async (caseId: string | null, forensicHistory: ChatMessage[], handlerHistory: ChatMessage[]) => {
+    translateLog: async (caseId: string | null, details: Record<string, any>) => {
+        const response = await fetch(`${API_BASE_URL}/translate-log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ case_id: caseId, log_details: JSON.stringify(details, null, 2) }),
+        });
+        if (response.status === 429) throw Object.assign(new Error('Rate limit exceeded'), { status: 429 });
+        if (!response.ok) throw new Error('Failed to translate log');
+        return response.json() as Promise<{ reply?: string; error?: string }>;
+    },
+
+    saveEdited: async (oldCaseId: string, newName: string, nodes: any[], links: any[]) => {
+        const response = await fetch(`${API_BASE_URL}/save-edited`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                old_case_id: oldCaseId,
+                new_name: newName + ' (edited)',
+                nodes,
+                links,
+            }),
+        });
+        if (!response.ok) throw new Error('Failed to save edited investigation');
+        return response.json() as Promise<{ status: string }>;
+    },
+
+    generateForensicReport: async (nodes: any[], links: any[], analystNotes: string) => {
+        const response = await fetch(`${API_BASE_URL}/generate-forensic-report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nodes, links, analyst_notes: analystNotes }),
+        });
+        if (!response.ok) throw new Error('Failed to generate report from server');
+        return response.blob();
+    },
+
+    chatStream: async (
+        caseId: string | null,
+        forensicHistory: ChatMessage[],
+        handlerHistory: ChatMessage[],
+        viewContext: string,
+    ): Promise<Response> => {
         const response = await fetch(`${API_BASE_URL}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ case_id: caseId, history: forensicHistory, handler_history: handlerHistory })
+            body: JSON.stringify({
+                case_id: caseId,
+                history: forensicHistory,
+                handler_history: handlerHistory,
+                view_context: viewContext,
+            }),
         });
-        if (!response.ok) throw new Error('Failed to communicate with AI service');
-        return response.json();
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response;
     },
-
-    generateHandler: async (eventId: string, description: string) => {
-        const response = await fetch(`${API_BASE_URL}/generate-handler`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event_id: eventId, description })
-        });
-        if (!response.ok) throw new Error('Failed to generate handler');
-        return response.json();
-    }
 };
