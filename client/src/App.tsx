@@ -13,11 +13,6 @@ import { formatFilterValue } from './utils/formatters';
 import type { GraphData, ViewState, EditState, SavedQuery } from './types';
 import './App.css';
 
-interface GraphDataState {
-  nodes: any[];
-  links: any[];
-}
-
 type QueryToken =
   | { type: 'AND' | 'OR' | 'NOT' | 'LPAREN' | 'RPAREN' }
   | { type: 'TERM'; value: string };
@@ -62,56 +57,6 @@ export function tokenize(query: string): QueryToken[] {
   return tokens;
 }
 
-const extractTimestamp = (obj: any): number | null => {
-  if (!obj) return null;
-  if (obj.timestamp) return new Date(obj.timestamp).getTime();
-  if (obj.time) return new Date(obj.time).getTime();
-  if (obj.details?.timestamp) return new Date(obj.details.timestamp).getTime();
-  if (obj.details?.System?.TimeCreated?.SystemTime) return new Date(obj.details.System.TimeCreated.SystemTime).getTime();
-  return null;
-};
-
-const WINDOWS_CODE_MAP: Record<string, string> = {
-  '%%1904': 'New value created',
-  '%%1905': 'Value modified',
-  '%%1906': 'Value deleted',
-  '%%1936': 'Type 1 - Default',
-  '%%1937': 'Type 2 - Elevated',
-  '%%1938': 'Type 3 - Limited',
-  '%%1832': 'Anonymous',
-  '%%1833': 'Identification',
-  '%%1840': 'Impersonation',
-  '%%1841': 'Delegation',
-  '%%1842': 'Yes',
-  '%%1843': 'No',
-  '%%14592': 'Inbound',
-  '%%14593': 'Outbound',
-};
-
-const FIELD_VALUE_MAPS: Record<string, Record<string, string>> = {
-  OperationType: {
-    '%%1904': 'New value created',
-    '%%1905': 'Value modified',
-    '%%1906': 'Value deleted',
-  },
-  Status: {
-    '0x0': 'Success',
-    '0xc0000064': 'Unknown username',
-    '0xc000006a': 'Wrong password',
-    '0xc000006d': 'Bad credentials',
-  },
-  SubStatus: {
-    '0x0': 'Success',
-    '0xc0000064': 'Unknown username',
-    '0xc000006a': 'Wrong password',
-    '0xc000006d': 'Bad credentials',
-  },
-  FailureCode: {
-    '0x0': 'Success',
-    '0x1': 'Client not found in Kerberos database',
-    '0x18': 'Pre-authentication failed (wrong password)',
-  },
-};
 
 export function parseNumericValue(value: string): number | null {
   if (!value) return null;
