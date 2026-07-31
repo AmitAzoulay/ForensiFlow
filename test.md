@@ -54,7 +54,7 @@ In practice, most of our tests should be unit tests. That keeps them fast and ea
 ### Frontend Unit Tests
 
 - Use `Vitest` with `React Testing Library` for component and UI logic tests. These tests check how the app behaves from a user point of view.
-- Run in `jsdom` so components can render without a real browser. That lets us test React components inside Node.js.
+- Run in `jsdom`, allowing React components to render without a real browser inside Node.js.
 - Mock `fetch` and the API service for network-dependent code. These tests verify the UI reacts correctly when the server responds or fails.
 - Test state transitions and output rather than implementation details. That means we care about what the user sees or what data is returned, not every internal variable.
 
@@ -189,20 +189,52 @@ The items below are the current tests already implemented in this repository.
 
 - `test_get_graph_data_requires_case_id`
   - Type: `integration-style`
-  - What it checks: calling the route without `case_id` returns HTTP 400.
+  - What it checks: calling `GET /api/graph-data` without `case_id` returns HTTP 400.
   - Why it matters: validates required input and avoids unclear server behavior.
 - `test_get_investigations_success`
   - Type: `integration-style`
-  - What it checks: when DB lookup succeeds, the route returns HTTP 200 and data.
+  - What it checks: `GET /api/investigations` after stubbing the database call returns data.
   - Why it matters: confirms the normal API path works.
 - `test_get_investigations_failure`
   - Type: `integration-style`
-  - What it checks: when DB lookup fails, the route returns HTTP 500 with the expected error message.
+  - What it checks: `GET /api/investigations` when the DB helper raises an exception returns a server error.
   - Why it matters: confirms failure handling is stable and predictable.
 - `test_parse_evtx_requires_file_part`
   - Type: `integration-style`
-  - What it checks: upload route returns HTTP 400 if file input is missing.
+  - What it checks: `POST /api/parse-evtx` with no uploaded file returns HTTP 400.
   - Why it matters: protects the parser route from malformed requests.
+- `test_parse_evtx_rejects_empty_filename`
+  - Type: `integration-style`
+  - What it checks: `POST /api/parse-evtx` with an empty filename returns HTTP 400.
+  - Why it matters: rejects malformed uploads before parsing starts.
+- `test_get_graph_data_db_failure`
+  - Type: `integration-style`
+  - What it checks: `GET /api/graph-data?case_id=case-1` when the DB helper raises an exception returns an error.
+  - Why it matters: covers the graph lookup failure path.
+- `test_ai_chat_requires_case_id_and_history`
+  - Type: `integration-style`
+  - What it checks: `POST /api/ai-chat` with missing `case_id` or empty history returns HTTP 400.
+  - Why it matters: validates required AI chat input.
+- `test_ai_chat_returns_no_data_message`
+  - Type: `integration-style`
+  - What it checks: `POST /api/ai-chat` with a valid payload and an empty timeline returns a no-data reply.
+  - Why it matters: handles the empty-timeline AI chat branch.
+- `test_ai_chat_http_429_maps_to_429_reply`
+  - Type: `integration-style`
+  - What it checks: `POST /api/ai-chat` when the provider raises HTTP 429 returns a stable rate-limit reply.
+  - Why it matters: maps provider rate limits to a stable API response.
+- `test_delete_investigation_failure`
+  - Type: `integration-style`
+  - What it checks: `DELETE /api/investigations/case-1` when the DB helper raises an exception returns an error.
+  - Why it matters: covers delete failure handling.
+- `test_generate_handler_requires_numeric_event_id`
+  - Type: `integration-style`
+  - What it checks: `POST /api/generate-handler` with a non-numeric `event_id` returns HTTP 400.
+  - Why it matters: rejects invalid handler-generation input.
+- `test_parse_evtx_success_uses_stubbed_uuid_and_no_real_save`
+  - Type: `integration-style`
+  - What it checks: `POST /api/parse-evtx` with a valid file while UUID generation and file save are stubbed succeeds deterministically.
+  - Why it matters: keeps the upload-and-parse path deterministic.
 
 ### Backend: [server/tests/test_server_helpers.py](server/tests/test_server_helpers.py)
 
@@ -278,6 +310,30 @@ The items below are the current tests already implemented in this repository.
   - Type: `unit`
   - What it checks: chat requests are sent with the right method/headers and return parsed response.
   - Why it matters: protects the contract between UI and backend chat API.
+- `throws when uploadEvtx fails`
+  - Type: `unit`
+  - What it checks: failed upload responses are mapped to a readable EVTX parsing error.
+  - Why it matters: keeps upload failures understandable for the user.
+- `throws when translateLog fails`
+  - Type: `unit`
+  - What it checks: failed translate responses are mapped to a readable translation error.
+  - Why it matters: preserves predictable error handling for log translation.
+- `throws when deleteInvestigation fails`
+  - Type: `unit`
+  - What it checks: failed delete responses are mapped to a readable investigation deletion error.
+  - Why it matters: prevents silent failures when removing an investigation.
+- `throws when reparseCase fails`
+  - Type: `unit`
+  - What it checks: failed reparse responses are mapped to a readable reparse error.
+  - Why it matters: keeps case reprocessing failures visible.
+- `throws when generateHandler fails`
+  - Type: `unit`
+  - What it checks: failed handler-generation responses are mapped to a readable generation error.
+  - Why it matters: protects the handler-generation workflow from silent failure.
+- `throws when sendChatMessage fails`
+  - Type: `unit`
+  - What it checks: failed AI chat responses are mapped to a readable AI communication error.
+  - Why it matters: keeps AI chat failures understandable.
 
 ### Frontend: [client/src/__tests__/App.test.ts](client/src/__tests__/App.test.ts)
 
@@ -293,6 +349,22 @@ The items below are the current tests already implemented in this repository.
   - Type: `unit`
   - What it checks: known status codes are translated to analyst-friendly text.
   - Why it matters: improves interpretability of filtered event details.
+- `supports parentheses and NOT tokenization`
+  - Type: `unit`
+  - What it checks: advanced boolean query syntax is split into control tokens correctly.
+  - Why it matters: keeps complex query expressions working.
+- `keeps unknown status values unchanged`
+  - Type: `unit`
+  - What it checks: unmapped status values fall through unchanged.
+  - Why it matters: avoids incorrect translations for unknown codes.
+- `formats access mask values with interpreted permissions`
+  - Type: `unit`
+  - What it checks: access mask values are decoded into readable permission text.
+  - Why it matters: improves analyst interpretation of object access events.
+- `returns null for invalid numeric value parsing`
+  - Type: `unit`
+  - What it checks: invalid numeric strings are rejected cleanly.
+  - Why it matters: prevents bad input from producing misleading numbers.
 
 ## Coverage Snapshot (2026-07-15)
 
@@ -386,15 +458,3 @@ Detailed practice for pass/fail stability:
   - If a test fails intermittently, tag it as flaky immediately and prioritize fixing root cause.
   - Avoid leaving flaky tests in the required pipeline for long periods.
 
-### 4. Defect Escape Rate
-
-- Why it matters: this measures bugs found after release and is the strongest quality outcome metric.
-- How to measure in practice:
-  - Tag production bugs by area (frontend/backend/parser/AI).
-  - Link each bug fix PR to a new regression test.
-  - Review monthly: `escaped defects / total defects`.
-  - Goal: trend down over time, not perfection in one sprint.
-
-Suggested cadence:
-- Weekly: review coverage report changes and flaky failures.
-- Monthly: review escaped defects and add missing regression tests.
