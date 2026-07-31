@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatFilterValue, parseNumericValue, tokenize } from '../App';
-
+import { parseNumericValue, tokenize } from '../App';
+import { formatFilterValue } from '../utils/formatters';
 
 describe('App query helpers', () => {
   it('tokenizes logical query operators and terms', () => {
