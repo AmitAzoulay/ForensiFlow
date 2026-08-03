@@ -1,0 +1,61 @@
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: forensiflow-neo4j
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+    ports:
+      - '7474:7474'
+      - '7687:7687'
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"${NEO4J_PASSWORD}\" 'RETURN 1;' >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - forensiflow-net
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: forensiflow-server
+    restart: unless-stopped
+    env_file:
+      - .env.server
+    volumes:
+      - uploads-data:/app/uploads
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    networks:
+      - forensiflow-net
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: forensiflow-client
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/ssl/cs:/etc/ssl/cs:ro
+    ports:
+      - '80:80'
+      - '443:443'
+    depends_on:
+      - server
+    networks:
+      - forensiflow-net
+
+volumes:
+  neo4j-data:
+  uploads-data:
+
+networks:
+  forensiflow-net:
+    driver: bridge

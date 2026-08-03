@@ -6,6 +6,11 @@ env/
 
 # Security and Secrets
 .env
+.env.server
+.env.client
+
+# Server runtime logs
+logs/
 
 # Project specific uploads
 uploads/
