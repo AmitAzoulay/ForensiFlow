@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { apiService } from '../services/api';
+import { apiService, API_BASE_URL } from '../services/api';
 
 
 function makeJsonResponse(ok: boolean, payload: unknown) {
@@ -44,7 +44,7 @@ describe('apiService', () => {
     const result = await apiService.chat('case-1', [{ role: 'user', content: 'hi' }], []);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8000/api/chat',
+      `${API_BASE_URL}/chat`,
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
