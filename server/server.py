@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask
@@ -8,7 +9,7 @@ from flask_cors import CORS
 from database import Neo4jClient
 from routes import register_routes
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / '.env')
 
 logging.basicConfig(
     level=logging.INFO,
