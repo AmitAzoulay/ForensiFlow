@@ -1,10 +1,10 @@
 FROM node:24-alpine AS builder
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY client/package.json client/package-lock.json ./
 RUN npm ci
 
-COPY . .
+COPY client/ ./
 COPY .env.client .
 
 RUN set -a && \

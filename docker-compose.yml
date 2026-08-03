@@ -37,8 +37,8 @@ services:
 
   client:
     build:
-      context: ./client
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: client/Dockerfile
     container_name: forensiflow-client
     restart: unless-stopped
     volumes:
