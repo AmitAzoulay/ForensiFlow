@@ -16,4 +16,4 @@ cd - # go the the root directory of the project
 cd client # enter the client directory
 npm i # install client dependencies
 npm run build # build the client project
-cp dist/* /usr/share/nginx/html # copy the output of the build
+cp -r dist/* /usr/share/nginx/html # copy the output of the build
