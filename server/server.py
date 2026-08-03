@@ -30,6 +30,7 @@ db_client = Neo4jClient(
 register_routes(app, db_client)
 
 if __name__ == '__main__':
-    logger.info("ForensiFlow API Server starting on port 8000...")
-    app.run(debug=True, port=8000, exclude_patterns=['*/ai_generated/*'])
+    port = int(os.getenv("PORT", 8000))
+    logger.info(f"ForensiFlow API Server starting on port {port}...")
+    app.run(debug=True, port=port, exclude_patterns=['*/ai_generated/*'])
 
