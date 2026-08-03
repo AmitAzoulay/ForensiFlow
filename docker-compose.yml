@@ -27,8 +27,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env.server
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
     volumes:
       - uploads-data:/app/uploads
     depends_on:
@@ -43,8 +41,6 @@ services:
       dockerfile: client/Dockerfile
     container_name: forensiflow-client
     restart: unless-stopped
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/ssl/cs:/etc/ssl/cs:ro
