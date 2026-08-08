@@ -1,7 +1,7 @@
 /* NodeContextMenu.css */
 .node-context-menu {
     position: absolute;
-    z-index: 1000;
+    z-index: 1100;
     background-color: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 8px;

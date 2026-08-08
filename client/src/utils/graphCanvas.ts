@@ -159,8 +159,14 @@ export function drawCurvedLinkOnCanvas(
     const sourceTipX = startNode.x - ((startNode.x - controlPoint.x) / distToControlStart) * totalOffset;
     const sourceTipY = startNode.y - ((startNode.y - controlPoint.y) / distToControlStart) * totalOffset;
 
-    let linkColor = link.is_red ? '#ef4444' : (themeColors?.link || GRAPH_SETTINGS.LINK_COLOR);
-    if (link.isBundle) linkColor = themeColors?.bundle || '#0f172a';
+    let linkColor = '#ef4444';
+    if (link.is_red) {
+        linkColor = '#ef4444';
+    } else if (link.isBundle) {
+        linkColor = themeColors?.bundle || '#0f172a';
+    } else {
+        linkColor = themeColors?.link || GRAPH_SETTINGS.LINK_COLOR;
+    }
 
     ctx.beginPath();
     ctx.strokeStyle = linkColor;

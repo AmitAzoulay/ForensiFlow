@@ -53,10 +53,11 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
             {onApplyEdit && (
                 <>
                     <button
+                        type="button"
                         className="menu-item"
                         onClick={() => {
-                            onApplyEdit('red');
                             onClose();
+                            onApplyEdit('red');
                         }}
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
@@ -65,10 +66,11 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                         Mark Red
                     </button>
                     <button
+                        type="button"
                         className="menu-item"
                         onClick={() => {
-                            onApplyEdit('unred');
                             onClose();
+                            onApplyEdit('unred');
                         }}
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
@@ -78,10 +80,11 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                         Unmark Red
                     </button>
                     <button
+                        type="button"
                         className="menu-item"
                         onClick={() => {
-                            onApplyEdit('delete');
                             onClose();
+                            onApplyEdit('delete');
                         }}
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -97,10 +100,11 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 <>
                     <div style={{ height: '1px', backgroundColor: '#e2e8f0', margin: '4px 0' }}></div>
                     <button
+                        type="button"
                         className="menu-item"
                         onClick={() => {
-                            onSendToAI(targetType, targetData);
                             onClose();
+                            onSendToAI(targetType, targetData);
                         }}
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
