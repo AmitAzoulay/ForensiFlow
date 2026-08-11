@@ -55,7 +55,7 @@ export const apiService = {
         return response.json() as Promise<{ reply?: string; error?: string }>;
     },
 
-    saveEdited: async (oldCaseId: string, newName: string, nodes: any[], links: any[]) => {
+    saveEdited: async (oldCaseId: string, newName: string, nodes: any[], links: any[], notebookText: string) => {
         const response = await fetch(`${API_BASE_URL}/save-edited`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -64,6 +64,7 @@ export const apiService = {
                 new_name: newName + ' (edited)',
                 nodes,
                 links,
+                notebook_text: notebookText,
             }),
         });
         if (!response.ok) throw new Error('Failed to save edited investigation');

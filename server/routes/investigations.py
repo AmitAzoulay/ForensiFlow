@@ -49,7 +49,7 @@ def create_blueprint(db_client):
 
         try:
             parse_and_store_evtx(filepath, case_id, inv_name, db_client)
-            return jsonify({"status": "success", "case_id": case_id}), 201
+            return jsonify({"status": "success", "case_id": case_id, "filename": candidate_path.name}), 201
         except Exception as e:
             logger.error(f"Parsing failed: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
@@ -76,6 +76,7 @@ def create_blueprint(db_client):
     @bp.route('/api/save-edited', methods=['POST'])
     def save_edited_investigation():
         data = request.json
+
         new_case_id = str(uuid.uuid4())
         try:
             db_client.save_edited_graph(
@@ -84,6 +85,7 @@ def create_blueprint(db_client):
                 data.get('new_name'),
                 data.get('nodes'),
                 data.get('links'),
+                data.get('notebook_text'),
             )
             return jsonify({"status": "success", "case_id": new_case_id}), 200
         except Exception as e:

@@ -176,7 +176,7 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
         tx = session.begin_transaction()
         try:
             tx.run(
-                "CREATE (i:Investigation {case_id: $case_id, name: $name, created_at: timestamp()})",
+                "CREATE (i:Investigation {case_id: $case_id, name: $name, created_at: timestamp(), notebook_text: ''})",
                 case_id=case_id,
                 name=case_name
             )

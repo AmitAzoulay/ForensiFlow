@@ -139,11 +139,14 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
     useEffect(() => {
         if (!isPlaybackMode || !currentPlaybackLink || !graphRef.current) return;
 
+        //schedules the camera move after a short 80ms delay
         if (playbackFocusTimeoutRef.current) window.clearTimeout(playbackFocusTimeoutRef.current);
 
         playbackFocusTimeoutRef.current = window.setTimeout(() => {
+            //normalizes the source and target IDs in case they are objects instead of strings
             const sourceId = typeof currentPlaybackLink.source === 'object' ? currentPlaybackLink.source.id : currentPlaybackLink.source;
             const targetId = typeof currentPlaybackLink.target === 'object' ? currentPlaybackLink.target.id : currentPlaybackLink.target;
+            //finds the source and target nodes in the graph data
             const sourceNode = graphDataWithCurvature.nodes.find((n: any) => n.id === sourceId);
             const targetNode = graphDataWithCurvature.nodes.find((n: any) => n.id === targetId);
             if (!sourceNode || !targetNode) return;
@@ -151,6 +154,7 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
         }, 80);
 
         return () => {
+            //timer cleanup to prevent memory leaks or unintended behavior if the component unmounts or dependencies change
             if (playbackFocusTimeoutRef.current) {
                 window.clearTimeout(playbackFocusTimeoutRef.current);
                 playbackFocusTimeoutRef.current = null;
@@ -424,7 +428,6 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
                             <ul className="help-list">
                                 <li><kbd>Scroll</kbd> Zoom in / out</li>
                                 <li><kbd>Drag canvas</kbd> Pan</li>
-                                <li><kbd>Click node</kbd> Select &amp; view details</li>
                                 <li><kbd>Right-click</kbd> Context menu</li>
                                 <li><kbd>Ctrl + drag</kbd> Box-select multiple nodes</li>
                                 <li><kbd>Drag node</kbd> Reposition node</li>

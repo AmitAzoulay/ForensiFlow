@@ -2,6 +2,7 @@ import importlib
 import os
 
 from services import evtx_parser as ep
+from services import handlers as handlers_mod
 
 
 def _ensure_server_importable():
@@ -27,7 +28,6 @@ def test_interpret_details_filters_private_keys():
 def test_process_event_logic_calls_handler(monkeypatch):
     # Hook into EVENT_HANDLERS to ensure handler invocation paths work
     _ensure_server_importable()
-    from services import handlers as handlers_mod
 
     called = []
 
