@@ -82,6 +82,7 @@ function App() {
   const [rawGraphData, setRawGraphData] = useState<GraphData>(EMPTY_GRAPH);
   const [selectedLink, setSelectedLink] = useState<any>(null);
   const [caseId, setCaseId] = useState<string | null>(null);
+  const [caseName, setCaseName] = useState<string | null>(null);
   const [notebookText, setNotebookText] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,9 +136,17 @@ function App() {
     setIsPlaying,
   } = usePlayback(filteredGraphData);
 
-  const handleDataLoaded = (data: GraphData, newCaseId: string | null) => {
+  const handleDataLoaded = (data: GraphData & { notebook_text?: string | null }, newCaseId: string | null) => {
     setRawGraphData(data);
     setCaseId(newCaseId);
+    setCaseName(data.case_name ?? null);
+    if (data.notebook_text !== undefined && data.notebook_text !== null) {
+      setNotebookText(data.notebook_text);
+      if (newCaseId) {
+        if (data.notebook_text) localStorage.setItem(`forensiflow-notebook:${newCaseId}`, data.notebook_text);
+        else localStorage.removeItem(`forensiflow-notebook:${newCaseId}`);
+      }
+    }
     setSelectedLink(null);
     setSearchQuery('');
     setActiveFilters([]);
@@ -152,6 +161,7 @@ function App() {
     setRawGraphData(EMPTY_GRAPH);
     setSelectedLink(null);
     setCaseId(null);
+    setCaseName(null);
     setNotebookText('');
     setSearchQuery('');
     setActiveFilters([]);
@@ -328,7 +338,7 @@ function App() {
       type: l.type, details: l.details, is_red: l.is_red,
     }));
     try {
-      const result = await apiService.saveEdited(caseId, newName, nodesToSave, linksToSave);
+      const result = await apiService.saveEdited(caseId, newName, nodesToSave, linksToSave, notebookText);
       if (result.status === 'success') setRefreshKey(prev => prev + 1);
     } catch (e) {
       console.error(e);
@@ -515,6 +525,7 @@ function App() {
       <GraphPanel
         graphData={filteredGraphData}
         caseId={caseId}
+        caseName={caseName}
         currentTheme={theme}
         notebookText={notebookText}
         refreshKey={refreshKey}

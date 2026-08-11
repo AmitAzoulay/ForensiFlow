@@ -4,6 +4,7 @@ import './NotebookPopup.css';
 interface NotebookPopupProps {
     isOpen: boolean;
     caseId: string | null;
+    caseName?: string | null;
     notebookText: string;
     onNotebookChange: (value: string) => void;
     onClearNotes: () => void;
@@ -13,6 +14,7 @@ interface NotebookPopupProps {
 const NotebookPopup: React.FC<NotebookPopupProps> = ({
     isOpen,
     caseId,
+    caseName,
     notebookText,
     onNotebookChange,
     onClearNotes,
@@ -32,7 +34,7 @@ const NotebookPopup: React.FC<NotebookPopupProps> = ({
                 </div>
 
                 <div className="notebook-meta">
-                    <span>{caseId ? `Case: ${caseId.substring(0, 8)}` : 'No active case'}</span>
+                    <span>{caseName?.trim() ? `Case: ${caseName.trim()}` : caseId ? `Case: ${caseId.substring(0, 8)}` : 'No active case'}</span>
                     <span>Autosaved per investigation</span>
                 </div>
 

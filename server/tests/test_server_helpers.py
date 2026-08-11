@@ -3,6 +3,8 @@ import os
 
 import pytest
 
+from services.handler_registry import extract_reasoning, summarize_handler, validate_handler_ast
+
 
 def _load_server_module():
     os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
@@ -13,20 +15,22 @@ def _load_server_module():
 
 def test_extract_reasoning_reads_leading_comment_block():
     # This test ensures explanation comments are captured from generated handlers.
-    server_module = _load_server_module()
+    _load_server_module()
+
     code = "# first line\n# second line\ndef handler():\n    return 1\n"
 
-    result = server_module._extract_reasoning(code)
+    result = extract_reasoning(code)
 
     assert result == "first line\nsecond line"
 
 
 def test_summarize_handler_lists_relationships():
     # This test ensures the summary includes event ID and relationship hints.
-    server_module = _load_server_module()
+    _load_server_module()
+
     code = '_insert_graph_relationship(tx, case_id, "User", src, "Computer", dst, "LOGGED_IN", details)'
 
-    result = server_module._summarize_handler(code, "4624")
+    result = summarize_handler(code, "4624")
 
     assert "Handler for event 4624 registered." in result
     assert "User" in result
@@ -36,7 +40,8 @@ def test_summarize_handler_lists_relationships():
 
 def test_validate_handler_ast_accepts_safe_code():
     # This test proves known-safe handler code passes validation.
-    server_module = _load_server_module()
+    _load_server_module()
+
     code = (
         "from services.handlers._shared import ENTITY_RESOLVERS, _insert_graph_relationship\n"
         "from services.handlers import register_handler\n\n"
@@ -47,14 +52,15 @@ def test_validate_handler_ast_accepts_safe_code():
         "register_handler('4624', handle)\n"
     )
 
-    detected = server_module._validate_handler_ast(code, "4624")
+    detected = validate_handler_ast(code, "4624")
 
     assert detected == "4624"
 
 
 def test_validate_handler_ast_rejects_import_statement():
     # This test proves unsafe imports are blocked by the validator.
-    server_module = _load_server_module()
+    _load_server_module()
+
     code = (
         "import os\n"
         "from services.handlers import register_handler\n\n"
@@ -64,4 +70,4 @@ def test_validate_handler_ast_rejects_import_statement():
     )
 
     with pytest.raises(ValueError):
-        server_module._validate_handler_ast(code, "4624")
+        validate_handler_ast(code, "4624")

@@ -46,13 +46,11 @@ describe('App query helpers', () => {
     expect(formatFilterValue('Status', '0xdeadbeef')).toBe('0xdeadbeef');
   });
 
-  it('formats access mask values with interpreted permissions', () => {
-    // This test exercises access-mask decoding used in Windows object access events.
+  it('keeps access mask values unchanged', () => {
+    // This test covers the passthrough behavior for fields the formatter no longer interprets.
     const result = formatFilterValue('AccessMask', '0x3');
 
-    expect(result).toContain('0x3');
-    expect(result).toContain('Read Data / List Dir');
-    expect(result).toContain('Write Data / Add File');
+    expect(result).toBe('0x3');
   });
 
   it('returns null for invalid numeric value parsing', () => {

@@ -8,6 +8,7 @@ import './GraphPanel.css';
 interface GraphPanelProps {
     graphData: GraphData;
     caseId?: string | null;
+    caseName?: string | null;
     currentTheme?: 'light' | 'dark';
     notebookText?: string;
     refreshKey?: number;
@@ -37,6 +38,7 @@ interface GraphPanelProps {
 const GraphPanel: React.FC<GraphPanelProps> = ({
     graphData,
     caseId,
+    caseName,
     currentTheme = 'light',
     notebookText = '',
     refreshKey = 0,
@@ -107,6 +109,7 @@ const GraphPanel: React.FC<GraphPanelProps> = ({
             <NotebookPopup
                 isOpen={showNotebook}
                 caseId={caseId || null}
+                caseName={caseName ?? null}
                 notebookText={notebookText}
                 onNotebookChange={(text: string) => onNotebookChange?.(text)}
                 onClearNotes={() => onNotebookClear?.()}

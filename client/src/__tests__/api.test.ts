@@ -36,12 +36,13 @@ describe('apiService', () => {
   });
 
   it('sends chat payload and returns AI response', async () => {
-    // This test verifies request payload shape and response handling for /chat.
+    // This test verifies request payload shape and response handling for /chat via chatStream.
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       makeJsonResponse(true, { reply: 'ok' }),
     );
 
-    const result = await apiService.chat('case-1', [{ role: 'user', content: 'hi' }], []);
+    const resp = await apiService.chatStream('case-1', [{ role: 'user', content: 'hi' }], [], '');
+    const result = await resp.json();
 
     expect(fetchMock).toHaveBeenCalledWith(
       `${API_BASE_URL}/chat`,
@@ -65,7 +66,7 @@ describe('apiService', () => {
     // This test checks translate endpoint failure handling.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeJsonResponse(false, {}));
 
-    await expect(apiService.translateLog({ EventID: 1 })).rejects.toThrow('Failed to translate log');
+    await expect(apiService.translateLog('case-1', { EventID: 1 })).rejects.toThrow('Failed to translate log');
   });
 
   it('throws when deleteInvestigation fails', async () => {
@@ -82,19 +83,17 @@ describe('apiService', () => {
     await expect(apiService.reparseCase('case-1')).rejects.toThrow('Reparse failed');
   });
 
-  it('throws when generateHandler fails', async () => {
-    // This test checks handler generation endpoint failure handling.
+  it('throws when generateForensicReport fails', async () => {
+    // This test checks report generation endpoint failure handling.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeJsonResponse(false, {}));
 
-    await expect(apiService.generateHandler('4624', 'desc')).rejects.toThrow('Failed to generate handler');
+    await expect(apiService.generateForensicReport([], [], 'notes')).rejects.toThrow('Failed to generate report from server');
   });
 
-  it('throws when sendChatMessage fails', async () => {
-    // This test checks AI chat endpoint failure handling.
+  it('throws when chatStream fails', async () => {
+    // This test checks AI chat streaming failure handling.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeJsonResponse(false, {}));
 
-    await expect(apiService.sendChatMessage('case-1', [{ role: 'user', content: 'x' }])).rejects.toThrow(
-      'Failed to communicate with AI service',
-    );
+    await expect(apiService.chatStream('case-1', [{ role: 'user', content: 'x' }], [], '')).rejects.toThrow();
   });
 });

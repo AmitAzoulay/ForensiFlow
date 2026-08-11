@@ -38,9 +38,19 @@ class Neo4jClient:
         """
         nodes_dict = {}
         links = []
+        notebook_text = None
+        case_name = None
         
         try:
             with self.driver.session() as session:
+                investigation_result = session.run(
+                    "MATCH (i:Investigation {case_id: $case_id}) RETURN i.notebook_text AS notebook_text, i.name AS name LIMIT 1",
+                    case_id=case_id,
+                ).single()
+                if investigation_result:
+                    notebook_text = investigation_result["notebook_text"]
+                    case_name = investigation_result["name"]
+
                 results = session.run(query, case_id=case_id)
                 for record in results:
                     node_source = record["n"]
@@ -73,7 +83,7 @@ class Neo4jClient:
                         "details": dict(rel),
                         "is_red": dict(rel).get("is_red", False)
                     })
-            return {"nodes": list(nodes_dict.values()), "links": links}
+            return {"nodes": list(nodes_dict.values()), "links": links, "notebook_text": notebook_text, "case_name": case_name}
         except Exception as e:
             logger.error(f"Database error during get_case_graph: {e}")
             raise
@@ -122,8 +132,8 @@ class Neo4jClient:
             logger.error(f"Database error during delete_investigation: {e}")
             raise
 
-    def save_edited_graph(self, original_case_id, new_case_id, new_name, nodes, links):
-        query_inv = "CREATE (i:Investigation {case_id: $new_case_id, name: $new_name, created_at: timestamp()})"
+    def save_edited_graph(self, original_case_id, new_case_id, new_name, nodes, links, notebook_text):
+        query_inv = "CREATE (i:Investigation {case_id: $new_case_id, name: $new_name, created_at: timestamp(), notebook_text: $notebook_text})"
         
         nodes_list = nodes if nodes is not None else []
         links_list = links if links is not None else []
@@ -145,7 +155,7 @@ class Neo4jClient:
             with self.driver.session() as session:
                 tx = session.begin_transaction()
                 
-                tx.run(query_inv, new_case_id=new_case_id, new_name=new_name)
+                tx.run(query_inv, new_case_id=new_case_id, new_name=new_name, notebook_text=notebook_text or "")
 
                 created_nodes_count = 0
                 for n in nodes_list:

@@ -1,6 +1,8 @@
 import importlib
 import os
 
+from services.handler_registry import get_available_relations, tool_executor
+
 
 def _load_server_module():
     os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
@@ -10,13 +12,16 @@ def _load_server_module():
 
 
 def test_tool_executor_unknown_returns_error():
-    server = _load_server_module()
-    res = server._tool_executor('nonexistent_tool', {})
+    # Ensure environment is set up
+    _load_server_module()
+
+    res = tool_executor('nonexistent_tool', {})
     assert res.get('status') == 'error'
 
 
 def test_get_available_relations_includes_builtin():
-    server = _load_server_module()
-    rels = server._get_available_relations()
+    _load_server_module()
+
+    rels = get_available_relations()
     assert isinstance(rels, list)
     assert 'FAILED_LOGON' in rels

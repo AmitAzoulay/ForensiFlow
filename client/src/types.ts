@@ -31,6 +31,8 @@ export interface GraphLink {
 export interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
+  notebook_text?: string | null;
+  case_name?: string | null;
 }
 
 export interface Investigation {
