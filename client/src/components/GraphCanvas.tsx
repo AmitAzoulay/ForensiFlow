@@ -104,12 +104,14 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
                 directions.forEach((dirGroup, index) => {
                     const representative = dirGroup[0];
                     const isReversed = representative._sourceId > representative._targetId;
+                    const hasRed = dirGroup.some((ln: any) => ln.is_red);
                     const centralOffset = index - (directions.length - 1) / 2;
                     processedLinks.push({
                         ...representative,
                         id: `bundle-${representative._sourceId}-${representative._targetId}`,
                         type: `${dirGroup.length} Events`,
                         isBundle: true,
+                        is_red: representative.is_red || hasRed,
                         bundledLinks: dirGroup,
                         curvature: directions.length > 1 ? (centralOffset * 0.15 * (isReversed ? -1 : 1)) : 0,
                     });
@@ -365,7 +367,10 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
                         targetType={contextMenu.targetType}
                         targetData={contextMenu.targetData}
                         hasExistingQuery={hasExistingQuery}
-                        onClose={() => setContextMenu(null)}
+                        onClose={() => {
+                            setContextMenu(null);
+                            setBundlePopup(null);
+                        }}
                         onSendToAI={onSendToAI}
                         onApplyFilter={onApplyNodeFilter}
                         onApplyEdit={(action) => onApplyEdit(action, contextMenu.targetType, contextMenu.targetData)}
@@ -384,11 +389,35 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({
                                 <div
                                     key={i}
                                     onClick={() => { onLinkClick(l); setBundlePopup(null); }}
-                                    style={{ padding: '8px', borderBottom: i < bundlePopup.links.length - 1 ? '1px solid var(--border-subtle)' : 'none', cursor: 'pointer', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}
-                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--surface-alt)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        if (!containerRef.current) return;
+                                        const rect = containerRef.current.getBoundingClientRect();
+                                        setSelectedGroup({ nodes: [], links: [] });
+                                        setContextMenu({
+                                            x: event.clientX - rect.left,
+                                            y: event.clientY - rect.top,
+                                            targetType: 'link',
+                                            targetData: l,
+                                            targetLabel: l.type || 'Connection',
+                                        });
+                                    }}
+                                    style={{
+                                        padding: '8px',
+                                        borderBottom: i < bundlePopup.links.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '4px',
+                                        backgroundColor: l.is_red ? 'rgba(239, 68, 68, 0.12)' : 'transparent',
+                                        borderLeft: l.is_red ? '4px solid #ef4444' : '4px solid transparent',
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = l.is_red ? 'rgba(239, 68, 68, 0.2)' : 'var(--surface-alt)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = l.is_red ? 'rgba(239, 68, 68, 0.12)' : 'transparent'}
                                 >
-                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{l.type}</div>
+                                    <div style={{ fontWeight: 600, color: l.is_red ? '#b91c1c' : 'var(--text-primary)' }}>{l.type}</div>
                                     <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
                                         {l.details?.timestamp ? new Date(l.details.timestamp).toLocaleString() : (l.details?.event_id || 'N/A')}
                                     </div>

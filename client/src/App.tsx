@@ -297,7 +297,7 @@ function App() {
         processItems([targetData], connectedLinks, action);
       } else if (targetType === 'link') {
         if (action === 'delete') processItems([], [targetData], 'delete');
-        else processItems([targetData.source, targetData.target], [targetData], action);
+        else processItems([], [targetData], action);
       } else if (targetType === 'group') {
         const groupNodeIds = new Set(targetData.nodes.map((n: any) => n.id));
         const connectedLinks = rawGraphData.links.filter(l =>

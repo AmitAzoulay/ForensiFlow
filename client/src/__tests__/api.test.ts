@@ -66,7 +66,7 @@ describe('apiService', () => {
     // This test checks translate endpoint failure handling.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeJsonResponse(false, {}));
 
-    await expect(apiService.translateLog({ EventID: 1 })).rejects.toThrow('Failed to translate log');
+    await expect(apiService.translateLog('case-1', { EventID: 1 })).rejects.toThrow('Failed to translate log');
   });
 
   it('throws when deleteInvestigation fails', async () => {
