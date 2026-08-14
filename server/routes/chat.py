@@ -50,8 +50,7 @@ def _stream_forensic(message: str, history: list, case_id: str | None, view_cont
         yield _sse({'type': 'response', 'intent': 'forensic', 'reply': 'Load a case first to analyze the investigation.'})
         return
     try:
-        summary_request = any(kw in message.lower() for kw in ['summarize', 'summary', 'summarise'])
-        use_current_view = bool(view_context) and summary_request
+        use_current_view = bool(view_context)
         context_label = 'the current graph view' if use_current_view else 'the investigation timeline'
 
         if not use_current_view:
