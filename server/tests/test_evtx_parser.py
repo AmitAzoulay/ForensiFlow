@@ -6,6 +6,7 @@ from services import handlers as handlers_mod
 
 
 def _ensure_server_importable():
+    # Set the minimum required Neo4j env vars before importing the Flask server in tests.
     os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
     os.environ.setdefault("NEO4J_USER", "neo4j")
     os.environ.setdefault("NEO4J_PASSWORD", "test")
@@ -13,11 +14,14 @@ def _ensure_server_importable():
 
 
 def test_interpret_value_translates_known_codes():
-    # Ensure a known NTSTATUS code becomes a readable string
+    # This test verifies that Windows status codes are converted into readable analyst-facing strings.
+    # A well-known NTSTATUS value should resolve to a meaningful description rather than remaining raw hex.
     assert 'Wrong password' in ep._interpret_value('Status', '0xc000006a')
 
 
 def test_interpret_details_filters_private_keys():
+    # This test ensures parser cleanup removes internal metadata while preserving valid event fields.
+    # Private keys such as _internal should never be forwarded into the processed event payload.
     details = {'Status': '0x0', '_internal': 'secret', 'Other': 'val'}
     interpreted = ep._interpret_details(details)
     assert 'Status' in interpreted
@@ -26,7 +30,8 @@ def test_interpret_details_filters_private_keys():
 
 
 def test_process_event_logic_calls_handler(monkeypatch):
-    # Hook into EVENT_HANDLERS to ensure handler invocation paths work
+    # This test exercises the event-dispatch path and confirms that the correct handler is invoked.
+    # We temporarily register a fake handler and assert that it sees the event ID and case context.
     _ensure_server_importable()
 
     called = []
