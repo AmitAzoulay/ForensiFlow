@@ -33,5 +33,6 @@ register_routes(app, db_client)
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 8000))
     logger.info(f"ForensiFlow API Server starting on port {port}...")
-    app.run(host='0.0.0.0', debug=True, port=port)
+    app.run(host='0.0.0.0', debug=True, port=port,
+            exclude_patterns=['*/handlers/ai_generated/*'])
 

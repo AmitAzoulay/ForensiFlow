@@ -132,7 +132,9 @@ def exec_list_handlers() -> dict:
         parts = f.stem.split('_', 2)
         event_id_part = parts[1] if len(parts) > 1 else '?'
         name_part = parts[2].replace('_', ' ') if len(parts) > 2 else f.stem
-        lines.append(f"  • Event {event_id_part}: {name_part}  [{f.stem}]")
+        rel_types = [rt for _, _, rt in _REL_RE.findall(f.read_text())]
+        search_str = ', '.join(rel_types) if rel_types else '?'
+        lines.append(f"  • Event {event_id_part}: {name_part}  [{search_str}]")
     return {"status": "ok", "message": "\n".join(lines)}
 
 

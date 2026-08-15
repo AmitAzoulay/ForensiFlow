@@ -58,7 +58,7 @@ def generate_with_tools(system: str, contents: list, tools: list, temperature: f
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": contents,
         "tools": tools,
-        "toolConfig": {"functionCallingConfig": {"mode": "ANY"}},
+        "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
         "generationConfig": {"temperature": temperature},
     }
 
