@@ -19,6 +19,7 @@ _STATIC_HANDLERS: dict = {
 }
 
 EVENT_HANDLERS: dict = dict(_STATIC_HANDLERS)
+STATIC_HANDLER_IDS: frozenset = frozenset(_STATIC_HANDLERS.keys())
 
 # Keyed by (caller_module, event_id) so reloading a file replaces its entry
 # while a different file for the same event_id adds a new entry.

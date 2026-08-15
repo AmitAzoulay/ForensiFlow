@@ -7,7 +7,7 @@ from pathlib import Path
 
 from services.ai_agent import generate_event_handler
 from services.handler_validator import validate_handler_ast
-from services.handlers import EVENT_HANDLERS, deregister_handler
+from services.handlers import EVENT_HANDLERS, STATIC_HANDLER_IDS, deregister_handler
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,9 @@ def exec_remove_handler(name_query: str) -> dict:
         return {"status": "error", "message": "Please specify which handler to remove."}
     matches = [f for f in files if name_query in f.stem.lower()]
     if not matches:
+        builtin_matches = [eid for eid in STATIC_HANDLER_IDS if name_query in eid.lower()]
+        if builtin_matches:
+            return {"status": "error", "message": f"Event {', '.join(sorted(builtin_matches))} is a built-in handler and cannot be removed."}
         return {"status": "error", "message": f"No handler found matching '{name_query}'."}
     if len(matches) > 1:
         names = ", ".join(f.stem for f in matches)
