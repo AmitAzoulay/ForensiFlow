@@ -7,6 +7,7 @@ from services.handler_registry import extract_reasoning, summarize_handler, vali
 
 
 def _load_server_module():
+    # This helper ensures the import environment matches the application initialization used in runtime.
     os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
     os.environ.setdefault("NEO4J_USER", "neo4j")
     os.environ.setdefault("NEO4J_PASSWORD", "test")
@@ -14,7 +15,8 @@ def _load_server_module():
 
 
 def test_extract_reasoning_reads_leading_comment_block():
-    # This test ensures explanation comments are captured from generated handlers.
+    # This test verifies that descriptive comments at the top of a generated handler are extracted correctly.
+    # We assert the exact text is preserved without the leading comment markers.
     _load_server_module()
 
     code = "# first line\n# second line\ndef handler():\n    return 1\n"
@@ -25,7 +27,8 @@ def test_extract_reasoning_reads_leading_comment_block():
 
 
 def test_summarize_handler_lists_relationships():
-    # This test ensures the summary includes event ID and relationship hints.
+    # This test checks the library creates a readable summary from generated handler code.
+    # The summary should include the target event ID and the relationship names mentioned in the logic.
     _load_server_module()
 
     code = '_insert_graph_relationship(tx, case_id, "User", src, "Computer", dst, "LOGGED_IN", details)'
@@ -39,7 +42,8 @@ def test_summarize_handler_lists_relationships():
 
 
 def test_validate_handler_ast_accepts_safe_code():
-    # This test proves known-safe handler code passes validation.
+    # This test ensures the AST validator allows vetted, safe handler patterns.
+    # Only known-safe imports and relationship construction patterns are expected to pass.
     _load_server_module()
 
     code = (
@@ -58,7 +62,8 @@ def test_validate_handler_ast_accepts_safe_code():
 
 
 def test_validate_handler_ast_rejects_import_statement():
-    # This test proves unsafe imports are blocked by the validator.
+    # This test confirms that unsafe imports are rejected before a handler is registered.
+    # The validator should raise an error when code attempts to import modules outside the approved pattern.
     _load_server_module()
 
     code = (
