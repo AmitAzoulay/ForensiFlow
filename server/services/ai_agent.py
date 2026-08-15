@@ -67,8 +67,8 @@ def run_handler_agent(message: str, handler_history: list, tool_executor) -> dic
     all_results = []
     needs_reparse = False
 
-    for _ in range(5):
-        parts = gemini.generate_with_tools(HANDLER_AGENT_SYSTEM_PROMPT, contents, HANDLER_TOOLS)
+    for i in range(5):
+        parts = gemini.generate_with_tools(HANDLER_AGENT_SYSTEM_PROMPT, contents, HANDLER_TOOLS, force=i == 0)
         function_calls = [p["functionCall"] for p in parts if "functionCall" in p]
         if not function_calls:
             break

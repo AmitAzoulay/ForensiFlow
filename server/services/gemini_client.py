@@ -52,13 +52,14 @@ def generate(system: str, contents: list, temperature: float = 0.2, mime_type: s
     return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
 
 
-def generate_with_tools(system: str, contents: list, tools: list, temperature: float = 0.0) -> list:
-    """Send one forced tool-calling round. Returns the raw parts list."""
+def generate_with_tools(system: str, contents: list, tools: list, temperature: float = 0.0, force: bool = True) -> list:
+    """Send one tool-calling round. Returns the raw parts list.
+    force=True uses mode ANY (model must call a tool); force=False uses AUTO (model may stop)."""
     payload = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": contents,
         "tools": tools,
-        "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
+        "toolConfig": {"functionCallingConfig": {"mode": "ANY" if force else "AUTO"}},
         "generationConfig": {"temperature": temperature},
     }
 
