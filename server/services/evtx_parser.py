@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 import Evtx.Evtx as evtx
 
@@ -116,6 +117,7 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
     Parses a Windows EVTX file, extracts relevant forensic events,
     and stores them as a graph inside Neo4j.
     """
+    start_time = time.perf_counter()
     parsed_logs = []
     sid_map = {}
     proc_map = {}
@@ -172,6 +174,14 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
             except Exception:
                 continue
 
+    parse_elapsed = time.perf_counter() - start_time
+    logger.info(
+        f"Parsed {len(parsed_logs)} events from {filepath} in {parse_elapsed:.2f}s "
+        f"({(len(parsed_logs) / parse_elapsed if parse_elapsed > 0 else 0):.1f} logs/sec)"
+    )
+
+    store_start = time.perf_counter()
+
     with db_client.driver.session() as session:
         tx = session.begin_transaction()
         try:
@@ -208,7 +218,14 @@ def parse_and_store_evtx(filepath, case_id, case_name, db_client):
 
         try:
             tx.commit()
-            logger.info(f"Successfully processed and stored EVTX for case {case_id}")
+            store_elapsed = time.perf_counter() - store_start
+            total_elapsed = time.perf_counter() - start_time
+            logs_per_second = len(parsed_logs) / total_elapsed if total_elapsed > 0 else 0
+            logger.info(
+                f"Successfully processed and stored EVTX for case {case_id}: "
+                f"{len(parsed_logs)} logs stored in {store_elapsed:.2f}s, "
+                f"total {total_elapsed:.2f}s ({logs_per_second:.1f} logs/sec)"
+            )
         except Exception as e:
             logger.warning(f"Final commit partial failure, some events may be missing: {e}")
             try:

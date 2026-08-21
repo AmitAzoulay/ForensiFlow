@@ -1,4 +1,6 @@
 import logging
+import time
+
 from neo4j import GraphDatabase
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,8 @@ class Neo4jClient:
         links = []
         notebook_text = None
         case_name = None
-        
+        start_time = time.perf_counter()
+
         try:
             with self.driver.session() as session:
                 investigation_result = session.run(
@@ -83,6 +86,12 @@ class Neo4jClient:
                         "details": dict(rel),
                         "is_red": dict(rel).get("is_red", False)
                     })
+            elapsed = time.perf_counter() - start_time
+            records_per_second = (len(nodes_dict) + len(links)) / elapsed if elapsed > 0 else 0
+            logger.info(
+                f"Loaded investigation {case_id}: {len(nodes_dict)} nodes, {len(links)} links "
+                f"in {elapsed:.2f}s ({records_per_second:.1f} records/sec)"
+            )
             return {"nodes": list(nodes_dict.values()), "links": links, "notebook_text": notebook_text, "case_name": case_name}
         except Exception as e:
             logger.error(f"Database error during get_case_graph: {e}")
